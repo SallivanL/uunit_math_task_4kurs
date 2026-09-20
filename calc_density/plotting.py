@@ -1,52 +1,34 @@
 import os
+
 import matplotlib.pyplot as plt
 
-from calc import calculate_densities, find_peak_area
-from logger import log
-from points import save_plot_points
+from logger import logger
 
 
-def plot_three_densities(k, theta, N):
-
-    x, f, phi_max, psi_min = calculate_densities(
-        k=k,
-        theta=theta,
-        N=N
-    )
-
-    m = 0.7
-
-    f_area = find_peak_area(x, f, m)
-    phi_area = find_peak_area(x, phi_max, m)
-    psi_area = find_peak_area(x, psi_min, m)
-
-    # Сохраняем точки в общий log.md
-    points_file = save_plot_points(
-        x=x,
-        f=f,
-        phi_max=phi_max,
-        psi_min=psi_min,
-        k=k,
-        theta=theta,
-        N=N,
-        save_points=100
-    )
-
-    # Построение графика
+def plot_three_densities(
+    x,
+    f,
+    f_min,
+    f_max,
+    areas,
+    k,
+    theta,
+    N
+):
     plt.figure(figsize=(11, 7))
 
     plt.plot(
         x,
-        phi_max,
+        f_max,
         linewidth=2,
-        label=r"$\varphi_{\max}(x)$ — максимум"
+        label=r"$f_{\max}(x)$ — максимум"
     )
 
     plt.plot(
         x,
-        psi_min,
+        f_min,
         linewidth=2,
-        label=r"$\psi_{\min}(x)$ — минимум"
+        label=r"$f_{\min}(x)$ — минимум"
     )
 
     plt.plot(
@@ -56,10 +38,9 @@ def plot_three_densities(k, theta, N):
         label=r"$f(x)$ — исходное распределение"
     )
 
-    plt.title(
-        f"Сравнение распределений: k={k}, θ={theta}, N={N}",
-        fontsize=15
-    )
+    f_area = areas["f"]
+    f_min_area = areas["f_min"]
+    f_max_area = areas["f_max"]
 
     plt.fill_between(
         x[f_area["left"]:f_area["right"] + 1],
@@ -68,16 +49,23 @@ def plot_three_densities(k, theta, N):
     )
 
     plt.fill_between(
-        x[phi_area["left"]:phi_area["right"] + 1],
-        phi_max[phi_area["left"]:phi_area["right"] + 1],
+        x[f_min_area["left"]:f_min_area["right"] + 1],
+        f_min[f_min_area["left"]:f_min_area["right"] + 1],
         alpha=0.25
     )
 
     plt.fill_between(
-        x[psi_area["left"]:psi_area["right"] + 1],
-        psi_min[psi_area["left"]:psi_area["right"] + 1],
+        x[f_max_area["left"]:f_max_area["right"] + 1],
+        f_max[f_max_area["left"]:f_max_area["right"] + 1],
         alpha=0.25
     )
+
+    plt.title(
+        f"Сравнение распределений: "
+        f"k={k}, θ={theta}, N={N}",
+        fontsize=15
+    )
+
     plt.xlabel("x", fontsize=13)
     plt.ylabel("Плотность", fontsize=13)
 
@@ -103,11 +91,9 @@ def plot_three_densities(k, theta, N):
 
     plt.close()
 
-    log(
-        "График сохранён",
-        graph=graph_file,
-        points=points_file,
-        k=k,
-        theta=theta,
-        N=N
+    logger.info(
+        "График сохранён: %s",
+        graph_file
     )
+
+    return graph_file

@@ -1,25 +1,38 @@
+import logging
 import os
-from datetime import datetime
 
 
 LOG_FILE = "results/log.md"
 
 
-def log(message="", **data):
+def setup_logger():
     os.makedirs("results", exist_ok=True)
 
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    logger = logging.getLogger("project")
+    logger.setLevel(logging.INFO)
 
-    line = f"### {timestamp}\n\n"
+    if logger.handlers:
+        return logger
 
-    if message:
-        line += f"{message}\n\n"
+    formatter = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
 
-    if data:
-        for key, value in data.items():
-            line += f"- **{key}:** {value}\n"
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
 
-        line += "\n"
+    file_handler = logging.FileHandler(
+        LOG_FILE,
+        mode="a",
+        encoding="utf-8"
+    )
+    file_handler.setFormatter(formatter)
 
-    with open(LOG_FILE, "a", encoding="utf-8") as file:
-        file.write(line)
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
+
+    return logger
+
+
+logger = setup_logger()

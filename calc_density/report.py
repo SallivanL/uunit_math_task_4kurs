@@ -1,62 +1,47 @@
 import os
 
-from logger import log
 
-AREA_FILE = "results/calc_areas.md"
+REPORT_FILE = "results/report.md"
 
-def init_area_report():
+
+def create_report(results):
     os.makedirs("results", exist_ok=True)
 
-    with open(AREA_FILE, "w", encoding="utf-8") as f:
-        f.write("# Расчёт площадей под кривыми\n\n")
-        f.write(
-            "| k | theta | N | m | функция | "
-            "полная площадь | площадь m | доля | "
-            "x_left | x_peak | x_right |\n"
-        )
-        f.write(
-            "|---:|---:|---:|---:|---|---:|---:|"
-            "---:|---:|---:|---:|\n"
-        )
+    lines = [
+        "# Результаты расчётов",
+        "",
+    ]
 
+    for result in results:
+        k = result["k"]
+        theta = result["theta"]
+        N = result["N"]
+        m = result["m"]
 
-def save_area_row(
-    k,
-    theta,
-    N,
-    m,
-    function_name,
-    area_info
-):
-    os.makedirs("results", exist_ok=True)
+        lines.extend([
+            f"## k={k}, theta={theta}, N={N}",
+            "",
+            f"Параметр `m = {m}`.",
+            "",
+            "| Функция | Площадь | Общая площадь | Доля |",
+            "|---|---:|---:|---:|",
+        ])
+
+        for name in ("f", "f_min", "f_max"):
+            area = result["areas"][name]
+
+            lines.append(
+                f"| `{name}` | "
+                f"{area['area']:.8f} | "
+                f"{area['total_area']:.8f} | "
+                f"{area['ratio']:.8f} |"
+            )
 
     with open(
-        AREA_FILE,
-        "a",
+        REPORT_FILE,
+        "w",
         encoding="utf-8"
-    ) as f:
-        f.write(
-            f"| {k} | {theta} | {N} | {m} | "
-            f"{function_name} | "
-            f"{area_info['total_area']:.10f} | "
-            f"{area_info['area']:.10f} | "
-            f"{area_info['ratio']:.10f} | "
-            f"{area_info['left_x']:.10f} | "
-            f"{area_info['peak_x']:.10f} | "
-            f"{area_info['right_x']:.10f} |\n"
-        )
+    ) as file:
+        file.write("\n".join(lines))
 
-    log(
-        "Расчёт площади",
-        k=k,
-        theta=theta,
-        N=N,
-        m=m,
-        function=function_name,
-        total_area=area_info["total_area"],
-        area=area_info["area"],
-        ratio=area_info["ratio"],
-        x_left=area_info["left_x"],
-        x_peak=area_info["peak_x"],
-        x_right=area_info["right_x"]
-    )
+    return REPORT_FILE
