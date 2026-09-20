@@ -10,7 +10,7 @@ from report import create_report
 
 def main():
     # Параметры эксперимента
-    m = 0.7
+    m = 0.8
 
     k_values = [1, 5, 15]
     theta_values = [1]
