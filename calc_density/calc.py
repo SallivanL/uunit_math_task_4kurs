@@ -303,13 +303,9 @@ def run_replays(k, theta, N, replays, x, areas, rng):
         results.append({
             "replay": replay,
             "orange_count": statistics["orange"]["count"],
-            "orange_ratio": statistics["orange"]["ratio"],
             "blue_count": statistics["blue"]["count"],
-            "blue_ratio": statistics["blue"]["ratio"],
             "green_count": statistics["green"]["count"],
-            "green_ratio": statistics["green"]["ratio"],
             "outside_count": statistics["outside"]["count"],
-            "outside_ratio": statistics["outside"]["ratio"],
             "total": statistics["total"]
         })
 
@@ -321,43 +317,21 @@ def calculate_replay_totals(replay_results):
     Суммирует фактические результаты всех replay.
     """
 
-    total = sum(
-        result["total"]
-        for result in replay_results
-    )
+    total = sum(result["total"] for result in replay_results)
 
-    orange_count = sum(
-        result["orange_count"]
-        for result in replay_results
-    )
-
-    blue_count = sum(
-        result["blue_count"]
-        for result in replay_results
-    )
-
-    green_count = sum(
-        result["green_count"]
-        for result in replay_results
-    )
-
-    outside_count = sum(
-        result["outside_count"]
-        for result in replay_results
-    )
+    orange_count = sum(result["orange_count"] for result in replay_results)
+    blue_count = sum(result["blue_count"] for result in replay_results)
+    green_count = sum(result["green_count"] for result in replay_results)
+    outside_count = sum(result["outside_count"] for result in replay_results)
 
     return {
         "orange_count": orange_count,
         "orange_ratio": orange_count / total,
-
         "blue_count": blue_count,
         "blue_ratio": blue_count / total,
-
         "green_count": green_count,
         "green_ratio": green_count / total,
-
         "outside_count": outside_count,
         "outside_ratio": outside_count / total,
-
         "total": total
     }

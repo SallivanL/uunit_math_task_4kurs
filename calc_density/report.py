@@ -4,183 +4,300 @@ import csv
 import os
 
 
-REPORT_FILE = "results/report.md"
-REPLAYS_FILE = "results/replays.csv"
+RESULTS_DIR = "results"
 
 
-def save_replay_statistics(
+def get_experiment_dir(k, N):
+    """
+    Возвращает и создаёт директорию конкретного эксперимента.
+
+    results/
+        k_X/
+            N_Y/
+    """
+
+    directory = os.path.join(
+        RESULTS_DIR,
+        f"k_{k}",
+        f"N_{N}"
+    )
+
+    os.makedirs(
+        directory,
+        exist_ok=True
+    )
+
+    return directory
+
+
+def save_experiment(
     k,
     theta,
     N,
-    replay_results
+    m,
+    replays,
+    x,
+    areas,
+    points,
+    figure,
+    replay_results,
+    replay_totals
 ):
     """
-    Сохраняет статистику каждого replay в CSV.
+    Полностью сохраняет один эксперимент.
 
-    Одна строка = один фактический эксперимент.
+    Именно эта функция отвечает за все файлы.
     """
 
-    os.makedirs("results", exist_ok=True)
+    output_dir = get_experiment_dir(
+        k=k,
+        N=N
+    )
 
-    file_exists = os.path.exists(REPLAYS_FILE)
+    save_graph(
+        figure=figure,
+        output_dir=output_dir,
+        k=k,
+        theta=theta,
+        N=N
+    )
 
-    with open(
-        REPLAYS_FILE,
-        "a",
-        newline="",
-        encoding="utf-8"
-    ) as file:
+    save_points(
+        points=points,
+        output_dir=output_dir,
+        k=k,
+        theta=theta,
+        N=N
+    )
 
-        writer = csv.writer(file)
+    save_replays(
+        replay_results=replay_results,
+        output_dir=output_dir,
+        k=k,
+        theta=theta,
+        N=N
+    )
 
-        if not file_exists:
-            writer.writerow([
-                "k",
-                "theta",
-                "N",
-                "replay",
-
-                "orange_count",
-                "orange_ratio",
-
-                "blue_count",
-                "blue_ratio",
-
-                "green_count",
-                "green_ratio",
-
-                "outside_count",
-                "outside_ratio",
-
-                "total"
-            ])
-
-        for result in replay_results:
-            writer.writerow([
-                k,
-                theta,
-                N,
-                result["replay"],
-
-                result["orange_count"],
-                f"{result['orange_ratio']:.12f}",
-
-                result["blue_count"],
-                f"{result['blue_ratio']:.12f}",
-
-                result["green_count"],
-                f"{result['green_ratio']:.12f}",
-
-                result["outside_count"],
-                f"{result['outside_ratio']:.12f}",
-
-                result["total"]
-            ])
-
-    return REPLAYS_FILE
+    save_report(
+        k=k,
+        theta=theta,
+        N=N,
+        m=m,
+        replays=replays,
+        x=x,
+        areas=areas,
+        replay_results=replay_results,
+        replay_totals=replay_totals,
+        output_dir=output_dir
+    )
 
 
-def create_report(results):
-    os.makedirs("results", exist_ok=True)
+def save_graph(
+    figure,
+    output_dir,
+    k,
+    theta,
+    N
+):
+    graph_file = os.path.join(
+        output_dir,
+        f"distribution_"
+        f"k_{k}_"
+        f"theta_{theta}_"
+        f"N_{N}.png"
+    )
+
+    figure.savefig(
+        graph_file,
+        dpi=150
+    )
+
+    # Закрываем figure после сохранения.
+    figure.clf()
+
+
+def save_points(
+    points,
+    output_dir,
+    k,
+    theta,
+    N
+):
+    points_file = os.path.join(
+        output_dir,
+        f"points_"
+        f"k_{k}_"
+        f"theta_{theta}_"
+        f"N_{N}.md"
+    )
 
     lines = [
-        "# Результаты расчётов",
+        f"# Точки графика",
         "",
+        f"- `k = {k}`",
+        f"- `theta = {theta}`",
+        f"- `N = {N}`",
+        "",
+        "| x | f(x) | f_min(x) | f_max(x) |",
+        "|---:|---:|---:|---:|"
     ]
 
-    for result in results:
-        k = result["k"]
-        theta = result["theta"]
-        N = result["N"]
-        m = result["m"]
-        replays = result["replays"]
-
-        areas = result["areas"]
-        totals = result["replay_totals"]
-
-        orange_boundary = (
-            areas["f_min"]["right"]
+    for point in points["points"]:
+        lines.append(
+            f"| {point['x']:.12f} | "
+            f"{point['f']:.12f} | "
+            f"{point['f_min']:.12f} | "
+            f"{point['f_max']:.12f} |"
         )
-
-        blue_boundary = (
-            areas["f"]["right"]
-        )
-
-        green_boundary = (
-            areas["f_max"]["left"]
-        )
-
-        # Здесь в areas лежат индексы.
-        # Реальные значения x берём из результата ниже
-        # через сохранённые границы в replay-статистике
-        # отдельно не сохраняем.
-
-        lines.extend([
-            f"## k={k}, theta={theta}, N={N}",
-            "",
-            f"Параметр `m = {m}`.",
-            "",
-            f"Количество повторений: `{replays}`.",
-            "",
-            "### Итог по фактическим элементам",
-            "",
-            "| Область | Элементов | Доля |",
-            "|---|---:|---:|",
-            (
-                f"| Оранжевая | "
-                f"{totals['orange_count']} | "
-                f"{totals['orange_ratio']:.8f} |"
-            ),
-            (
-                f"| Синяя | "
-                f"{totals['blue_count']} | "
-                f"{totals['blue_ratio']:.8f} |"
-            ),
-            (
-                f"| Зелёная | "
-                f"{totals['green_count']} | "
-                f"{totals['green_ratio']:.8f} |"
-            ),
-            (
-                f"| Вне областей | "
-                f"{totals['outside_count']} | "
-                f"{totals['outside_ratio']:.8f} |"
-            ),
-            (
-                f"| **Всего** | "
-                f"**{totals['total']}** | "
-                f"**1.00000000** |"
-            ),
-            "",
-            "### Границы областей",
-            "",
-            f"- Оранжевая: индекс `{orange_boundary}`",
-            f"- Синяя: индекс `{blue_boundary}`",
-            f"- Зелёная: индекс `{green_boundary}`",
-            "",
-            "### Статистика каждого replay",
-            "",
-            "| Replay | Оранжевая | Синяя | Зелёная | Вне областей | Всего |",
-            "|---:|---:|---:|---:|---:|---:|",
-        ])
-
-        for replay in result["replay_results"]:
-            lines.append(
-                f"| {replay['replay']} | "
-                f"{replay['orange_count']} | "
-                f"{replay['blue_count']} | "
-                f"{replay['green_count']} | "
-                f"{replay['outside_count']} | "
-                f"{replay['total']} |"
-            )
-
-        lines.append("")
 
     with open(
-        REPORT_FILE,
+        points_file,
         "w",
         encoding="utf-8"
     ) as file:
-        file.write("\n".join(lines))
+        file.write(
+            "\n".join(lines)
+        )
 
-    return REPORT_FILE
+
+def save_replays(replay_results, output_dir, k, theta, N):
+    filename = os.path.join(
+        output_dir,
+        f"replays_k_{k}_theta_{theta}_N_{N}.csv"
+    )
+
+    with open(filename, "w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+
+        writer.writerow([
+            "replay",
+            "orange_count",
+            "blue_count",
+            "green_count",
+            "outside_count",
+            "total",
+        ])
+
+        for result in replay_results:
+            writer.writerow([
+                result["replay"],
+                result["orange_count"],
+                result["blue_count"],
+                result["green_count"],
+                result["outside_count"],
+                result["total"],
+            ])
+
+def save_report(
+    k,
+    theta,
+    N,
+    m,
+    replays,
+    x,
+    areas,
+    replay_results,
+    replay_totals,
+    output_dir
+):
+    report_file = os.path.join(
+        output_dir,
+        f"report_"
+        f"k_{k}_"
+        f"theta_{theta}_"
+        f"N_{N}.md"
+    )
+
+    orange_boundary = x[
+        areas["f_min"]["right"]
+    ]
+
+    blue_boundary = x[
+        areas["f"]["right"]
+    ]
+
+    green_boundary = x[
+        areas["f_max"]["left"]
+    ]
+
+    lines = [
+        "# Результаты расчёта",
+        "",
+        f"- `k = {k}`",
+        f"- `theta = {theta}`",
+        f"- `N = {N}`",
+        f"- `m = {m}`",
+        f"- `replays = {replays}`",
+        "",
+        "## Границы закрашенных областей",
+        "",
+        "| Область | Интервал |",
+        "|---|---|",
+        (
+            f"| Оранжевая | "
+            f"`x <= {orange_boundary:.12f}` |"
+        ),
+        (
+            f"| Синяя | "
+            f"`{orange_boundary:.12f} < x <= "
+            f"{blue_boundary:.12f}` |"
+        ),
+        (
+            f"| Зелёная | "
+            f"`x >= {green_boundary:.12f}` |"
+        ),
+        "",
+        "## Итог по всем replay",
+        "",
+        "| Область | Элементов | Доля |",
+        "|---|---:|---:|",
+        (
+            f"| Оранжевая | "
+            f"{replay_totals['orange_count']} | "
+            f"{replay_totals['orange_ratio']:.2%} |"
+        ),
+        (
+            f"| Синяя | "
+            f"{replay_totals['blue_count']} | "
+            f"{replay_totals['blue_ratio']:.2%} |"
+        ),
+        (
+            f"| Зелёная | "
+            f"{replay_totals['green_count']} | "
+            f"{replay_totals['green_ratio']:.2%} |"
+        ),
+        (
+            f"| Вне областей | "
+            f"{replay_totals['outside_count']} | "
+            f"{replay_totals['outside_ratio']:.2%} |"
+        ),
+        (
+            f"| **Всего** | "
+            f"**{replay_totals['total']}** | "
+            f"**100.00%** |"
+        ),
+        "",
+        "## Статистика каждого replay",
+        "",
+        "| Replay | Оранжевая | Синяя | Зелёная | Вне областей | Всего |",
+        "|---:|---:|---:|---:|---:|---:|"
+    ]
+
+    for replay in replay_results:
+        lines.append(
+            f"| {replay['replay']} | "
+            f"{replay['orange_count']} | "
+            f"{replay['blue_count']} | "
+            f"{replay['green_count']} | "
+            f"{replay['outside_count']} | "
+            f"{replay['total']} |"
+        )
+
+    with open(
+        report_file,
+        "w",
+        encoding="utf-8"
+    ) as file:
+        file.write(
+            "\n".join(lines)
+        )

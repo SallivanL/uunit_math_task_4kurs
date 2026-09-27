@@ -1,8 +1,6 @@
-import os
+# plotting.py
 
 import matplotlib.pyplot as plt
-
-from logger import logger
 
 
 def plot_three_densities(
@@ -15,7 +13,9 @@ def plot_three_densities(
     theta,
     N
 ):
-    plt.figure(figsize=(11, 7))
+    figure = plt.figure(
+        figsize=(11, 7)
+    )
 
     plt.plot(
         x,
@@ -42,21 +42,42 @@ def plot_three_densities(
     f_min_area = areas["f_min"]
     f_max_area = areas["f_max"]
 
+    # Оранжевая область
     plt.fill_between(
-        x[f_area["left"]:f_area["right"] + 1],
-        f[f_area["left"]:f_area["right"] + 1],
+        x[
+            f_min_area["left"]:
+            f_min_area["right"] + 1
+        ],
+        f_min[
+            f_min_area["left"]:
+            f_min_area["right"] + 1
+        ],
         alpha=0.25
     )
 
+    # Синяя область
     plt.fill_between(
-        x[f_min_area["left"]:f_min_area["right"] + 1],
-        f_min[f_min_area["left"]:f_min_area["right"] + 1],
+        x[
+            f_area["left"]:
+            f_area["right"] + 1
+        ],
+        f[
+            f_area["left"]:
+            f_area["right"] + 1
+        ],
         alpha=0.25
     )
 
+    # Зелёная область
     plt.fill_between(
-        x[f_max_area["left"]:f_max_area["right"] + 1],
-        f_max[f_max_area["left"]:f_max_area["right"] + 1],
+        x[
+            f_max_area["left"]:
+            f_max_area["right"] + 1
+        ],
+        f_max[
+            f_max_area["left"]:
+            f_max_area["right"] + 1
+        ],
         alpha=0.25
     )
 
@@ -66,34 +87,25 @@ def plot_three_densities(
         fontsize=15
     )
 
-    plt.xlabel("x", fontsize=13)
-    plt.ylabel("Плотность", fontsize=13)
+    plt.xlabel(
+        "x",
+        fontsize=13
+    )
 
-    plt.grid(True, alpha=0.25)
-    plt.legend(fontsize=11)
+    plt.ylabel(
+        "Плотность",
+        fontsize=13
+    )
+
+    plt.grid(
+        True,
+        alpha=0.25
+    )
+
+    plt.legend(
+        fontsize=11
+    )
 
     plt.tight_layout()
 
-    os.makedirs("results", exist_ok=True)
-
-    graph_file = (
-        f"results/"
-        f"distribution_"
-        f"k_{k}_"
-        f"theta_{theta}_"
-        f"N_{N}.png"
-    )
-
-    plt.savefig(
-        graph_file,
-        dpi=150
-    )
-
-    plt.close()
-
-    logger.info(
-        "График сохранён: %s",
-        graph_file
-    )
-
-    return graph_file
+    return figure
