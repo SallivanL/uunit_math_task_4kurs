@@ -10,6 +10,7 @@ from calc import (
     calculate_areas,
     run_replays,
     calculate_replay_totals,
+    calculate_area_statistics,
 )
 from plotting import plot_three_densities
 from points import get_plot_points
@@ -86,6 +87,15 @@ def main():
                     replay_results
                 )
 
+                area_statistics = calculate_area_statistics(
+                    k=k,
+                    theta=theta,
+                    N=N,
+                    x=x,
+                    areas=areas,
+                    replay_results=replay_results
+                )
+
                 save_experiment(
                     k=k,
                     theta=theta,
@@ -97,7 +107,8 @@ def main():
                     points=points,
                     figure=figure,
                     replay_results=replay_results,
-                    replay_totals=replay_totals
+                    replay_totals=replay_totals,
+                    area_statistics = area_statistics
                 )
 
 

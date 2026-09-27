@@ -3,7 +3,6 @@
 import csv
 import os
 
-
 RESULTS_DIR = "results"
 
 
@@ -31,17 +30,18 @@ def get_experiment_dir(k, N):
 
 
 def save_experiment(
-    k,
-    theta,
-    N,
-    m,
-    replays,
-    x,
-    areas,
-    points,
-    figure,
-    replay_results,
-    replay_totals
+        k,
+        theta,
+        N,
+        m,
+        replays,
+        x,
+        areas,
+        points,
+        figure,
+        replay_results,
+        replay_totals,
+        area_statistics
 ):
     """
     Полностью сохраняет один эксперимент.
@@ -88,16 +88,17 @@ def save_experiment(
         areas=areas,
         replay_results=replay_results,
         replay_totals=replay_totals,
+        area_statistics=area_statistics,
         output_dir=output_dir
     )
 
 
 def save_graph(
-    figure,
-    output_dir,
-    k,
-    theta,
-    N
+        figure,
+        output_dir,
+        k,
+        theta,
+        N
 ):
     graph_file = os.path.join(
         output_dir,
@@ -117,11 +118,11 @@ def save_graph(
 
 
 def save_points(
-    points,
-    output_dir,
-    k,
-    theta,
-    N
+        points,
+        output_dir,
+        k,
+        theta,
+        N
 ):
     points_file = os.path.join(
         output_dir,
@@ -151,9 +152,9 @@ def save_points(
         )
 
     with open(
-        points_file,
-        "w",
-        encoding="utf-8"
+            points_file,
+            "w",
+            encoding="utf-8"
     ) as file:
         file.write(
             "\n".join(lines)
@@ -188,6 +189,7 @@ def save_replays(replay_results, output_dir, k, theta, N):
                 result["total"],
             ])
 
+
 def save_report(
     k,
     theta,
@@ -198,6 +200,7 @@ def save_report(
     areas,
     replay_results,
     replay_totals,
+    area_statistics,
     output_dir
 ):
     report_file = os.path.join(
@@ -277,9 +280,50 @@ def save_report(
             f"**100.00%** |"
         ),
         "",
+        "## Статистика областей",
+        "",
+        (
+            "Для каждой области рассчитаны: математическое ожидание, "
+            "частота, среднее количество элементов за replay, "
+            "среднее квадратическое отклонение и дисперсия."
+        ),
+        "",
+        (
+            "| Область | Мат. ожидание | Частота | "
+            "Среднее кол-во точек | СКО | Дисперсия |"
+        ),
+        "|---|---:|---:|---:|---:|---:|",
+        (
+            f"| Оранжевая | "
+            f"{area_statistics['orange']['mathematical_expectation']:.6f} | "
+            f"{area_statistics['orange']['frequency']:.2%} | "
+            f"{area_statistics['orange']['mean']:.6f} | "
+            f"{area_statistics['orange']['standard_deviation']:.6f} | "
+            f"{area_statistics['orange']['variance']:.6f} |"
+        ),
+        (
+            f"| Синяя | "
+            f"{area_statistics['blue']['mathematical_expectation']:.6f} | "
+            f"{area_statistics['blue']['frequency']:.2%} | "
+            f"{area_statistics['blue']['mean']:.6f} | "
+            f"{area_statistics['blue']['standard_deviation']:.6f} | "
+            f"{area_statistics['blue']['variance']:.6f} |"
+        ),
+        (
+            f"| Зелёная | "
+            f"{area_statistics['green']['mathematical_expectation']:.6f} | "
+            f"{area_statistics['green']['frequency']:.2%} | "
+            f"{area_statistics['green']['mean']:.6f} | "
+            f"{area_statistics['green']['standard_deviation']:.6f} | "
+            f"{area_statistics['green']['variance']:.6f} |"
+        ),
+        "",
         "## Статистика каждого replay",
         "",
-        "| Replay | Оранжевая | Синяя | Зелёная | Вне областей | Всего |",
+        (
+            "| Replay | Оранжевая | Синяя | Зелёная | "
+            "Вне областей | Всего |"
+        ),
         "|---:|---:|---:|---:|---:|---:|"
     ]
 

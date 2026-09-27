@@ -335,3 +335,123 @@ def calculate_replay_totals(replay_results):
         "outside_ratio": outside_count / total,
         "total": total
     }
+
+def calculate_area_statistics(
+    k,
+    theta,
+    N,
+    x,
+    areas,
+    replay_results
+):
+    """
+    Рассчитывает статистику для трёх областей:
+
+    1. Математическое ожидание количества элементов.
+    2. Частоту попадания элементов.
+    3. Среднее количество элементов за replay.
+    4. Среднее квадратическое отклонение.
+    5. Дисперсию.
+
+    Математическое ожидание рассчитывается теоретически:
+        E[X] = N * P(area)
+
+    Остальные показатели рассчитываются по фактическим
+    результатам всех replay.
+    """
+
+    orange_boundary = x[
+        areas["f_min"]["right"]
+    ]
+
+    blue_boundary = x[
+        areas["f"]["right"]
+    ]
+
+    green_boundary = x[
+        areas["f_max"]["left"]
+    ]
+
+    # Теоретические вероятности областей.
+    p_orange = gamma.cdf(
+        orange_boundary,
+        a=k,
+        scale=theta
+    )
+
+    p_blue = (
+        gamma.cdf(
+            blue_boundary,
+            a=k,
+            scale=theta
+        )
+        - gamma.cdf(
+            orange_boundary,
+            a=k,
+            scale=theta
+        )
+    )
+
+    p_green = 1 - gamma.cdf(
+        green_boundary,
+        a=k,
+        scale=theta
+    )
+
+    theoretical_probabilities = {
+        "orange": p_orange,
+        "blue": p_blue,
+        "green": p_green
+    }
+
+    statistics = {}
+
+    for area in ["orange", "blue", "green"]:
+        counts = np.array(
+            [
+                replay[f"{area}_count"]
+                for replay in replay_results
+            ],
+            dtype=float
+        )
+
+        total_elements = np.sum(counts)
+
+        total_replay_elements = (
+            len(replay_results) * int(N)
+        )
+
+        probability = theoretical_probabilities[area]
+
+        mathematical_expectation = (
+            N * probability
+        )
+
+        frequency = (
+            total_elements / total_replay_elements
+        )
+
+        mean = np.mean(counts)
+
+        variance = np.var(
+            counts,
+            ddof=0
+        )
+
+        standard_deviation = np.sqrt(
+            variance
+        )
+
+        statistics[area] = {
+            "mathematical_expectation": float(
+                mathematical_expectation
+            ),
+            "frequency": float(frequency),
+            "mean": float(mean),
+            "standard_deviation": float(
+                standard_deviation
+            ),
+            "variance": float(variance)
+        }
+
+    return statistics
