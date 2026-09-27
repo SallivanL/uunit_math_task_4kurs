@@ -12,9 +12,9 @@ def main():
     # Параметры эксперимента
     m = 0.8
 
-    k_values = [1, 5, 15]
+    k_values = [1, 2, 3, 4, 5,6, 7, 8, 9, 10,11, 12, 13, 14, 15]
     theta_values = [1]
-    N_values = [10, 100]
+    N_values = [30]
 
     # Подготовка результатов
     if os.path.exists("results"):

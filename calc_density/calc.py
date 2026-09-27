@@ -169,7 +169,7 @@ def find_right_area(x, y, m):
 
 def calculate_areas(x, f, f_min, f_max, m):
     return {
-        "f": find_peak_area(x, f, m),
+        "f": find_left_area(x, f, m),
         "f_min": find_left_area(x, f_min, m),
         "f_max": find_right_area(x, f_max, m),
     }
