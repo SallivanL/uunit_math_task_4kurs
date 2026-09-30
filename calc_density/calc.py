@@ -1,10 +1,14 @@
-# calc.py
-
 import numpy as np
 from scipy.stats import gamma
 
 
 def calculate_densities(k, theta, N, points=5000):
+    """
+    Рассчитывает:
+        f      — исходное распределение Gamma(k, theta)
+        f_min  — распределение минимума выборки размера N
+        f_max  — распределение максимума выборки размера N
+    """
     if k <= 0:
         raise ValueError("k должно быть > 0")
 
@@ -19,25 +23,25 @@ def calculate_densities(k, theta, N, points=5000):
     x_max = gamma.ppf(
         0.9999,
         a=k,
-        scale=theta
+        scale=theta,
     )
 
     x = np.linspace(
         0,
         x_max,
-        points
+        points,
     )
 
     f = gamma.pdf(
         x,
         a=k,
-        scale=theta
+        scale=theta,
     )
 
     F = gamma.cdf(
         x,
         a=k,
-        scale=theta
+        scale=theta,
     )
 
     f_max = (
@@ -55,73 +59,28 @@ def calculate_densities(k, theta, N, points=5000):
     return x, f, f_min, f_max
 
 
-def find_peak_area(x, y, m):
-    peak_index = np.argmax(y)
-
-    total_area = np.trapezoid(y, x)
-    target_area = m * total_area
-
-    left = peak_index
-    right = peak_index
-
-    while left > 0 or right < len(x) - 1:
-        left_area = np.trapezoid(
-            y[left:peak_index + 1],
-            x[left:peak_index + 1]
-        )
-
-        right_area = np.trapezoid(
-            y[peak_index:right + 1],
-            x[peak_index:right + 1]
-        )
-
-        if left_area + right_area >= target_area:
-            break
-
-        left_candidate = (
-            y[left - 1]
-            if left > 0
-            else -1
-        )
-
-        right_candidate = (
-            y[right + 1]
-            if right < len(x) - 1
-            else -1
-        )
-
-        if left_candidate >= right_candidate and left > 0:
-            left -= 1
-        elif right < len(x) - 1:
-            right += 1
-        else:
-            break
-
-    area = np.trapezoid(
-        y[left:right + 1],
-        x[left:right + 1]
-    )
-
-    return {
-        "left": left,
-        "right": right,
-        "peak": peak_index,
-        "area": area,
-        "total_area": total_area,
-        "ratio": area / total_area
-    }
-
-
 def find_left_area(x, y, m):
+    """
+    Находит левую область, содержащую m долю площади
+    под кривой y.
+
+    Используется для f_min.
+
+    Результат:
+        [0, right]
+    """
+    if not 0 < m <= 1:
+        raise ValueError("m должно быть в диапазоне (0, 1]")
+
     total_area = np.trapezoid(y, x)
     target_area = m * total_area
 
-    right = 0
+    right = len(x) - 1
 
     for i in range(1, len(x)):
         area = np.trapezoid(
             y[:i + 1],
-            x[:i + 1]
+            x[:i + 1],
         )
 
         if area >= target_area:
@@ -130,7 +89,7 @@ def find_left_area(x, y, m):
 
     area = np.trapezoid(
         y[:right + 1],
-        x[:right + 1]
+        x[:right + 1],
     )
 
     return {
@@ -138,20 +97,32 @@ def find_left_area(x, y, m):
         "right": right,
         "area": area,
         "total_area": total_area,
-        "ratio": area / total_area
+        "ratio": area / total_area,
     }
 
 
 def find_right_area(x, y, m):
+    """
+    Находит правую область, содержащую m долю площади
+    под кривой y.
+
+    Используется для f_max.
+
+    Результат:
+        [left, x_max]
+    """
+    if not 0 < m <= 1:
+        raise ValueError("m должно быть в диапазоне (0, 1]")
+
     total_area = np.trapezoid(y, x)
     target_area = m * total_area
 
-    left = len(x) - 1
+    left = 0
 
     for i in range(len(x) - 2, -1, -1):
         area = np.trapezoid(
             y[i:],
-            x[i:]
+            x[i:],
         )
 
         if area >= target_area:
@@ -160,7 +131,7 @@ def find_right_area(x, y, m):
 
     area = np.trapezoid(
         y[left:],
-        x[left:]
+        x[left:],
     )
 
     return {
@@ -168,22 +139,90 @@ def find_right_area(x, y, m):
         "right": len(x) - 1,
         "area": area,
         "total_area": total_area,
-        "ratio": area / total_area
+        "ratio": area / total_area,
     }
 
 
-def calculate_areas(x, f, f_min, f_max, m):
+def find_middle_area(x, left_index, right_index):
+    """
+    Формирует центральную область между двумя границами.
+
+    Левая граница берётся из f_min.
+    Правая граница берётся из f_max.
+
+    То есть:
+        left_boundary < x < right_boundary
+    """
+    if left_index >= right_index:
+        raise ValueError(
+            "Левая граница должна быть меньше правой"
+        )
+
     return {
-        "f": find_left_area(x, f, m),
-        "f_min": find_left_area(x, f_min, m),
-        "f_max": find_right_area(x, f_max, m),
+        "left": left_index,
+        "right": right_index,
+        "left_boundary": x[left_index],
+        "right_boundary": x[right_index],
+    }
+
+
+def calculate_areas(
+    x,
+    f,
+    f_min,
+    f_max,
+    m,
+):
+    """
+    Формирует три НЕпересекающиеся области.
+
+    1. Оранжевая:
+       левая область f_min, содержащая m площади.
+
+    2. Синяя:
+       промежуток между правой границей оранжевой
+       и левой границей зелёной.
+       Эта область строится по исходному f.
+
+    3. Зелёная:
+       правая область f_max, содержащая m площади.
+
+    Таким образом всё пространство x разбивается на:
+
+        ОРАНЖЕВАЯ | СИНЯЯ | ЗЕЛЁНАЯ
+
+    без незакрашенного промежутка.
+    """
+
+    orange = find_left_area(
+        x=x,
+        y=f_min,
+        m=m,
+    )
+
+    green = find_right_area(
+        x=x,
+        y=f_max,
+        m=m,
+    )
+
+    blue = find_middle_area(
+        x=x,
+        left_index=orange["right"],
+        right_index=green["left"],
+    )
+
+    return {
+        "orange": orange,
+        "blue": blue,
+        "green": green,
     }
 
 
 def generate_sample(k, theta, N, rng):
     """
-    Генерирует одну фактическую выборку из N элементов
-    исходного распределения Gamma(k, theta).
+    Генерирует одну выборку из N элементов
+    Gamma(k, theta).
     """
     if k <= 0:
         raise ValueError("k должно быть > 0")
@@ -197,43 +236,61 @@ def generate_sample(k, theta, N, rng):
     return rng.gamma(
         shape=k,
         scale=theta,
-        size=int(N)
+        size=int(N),
     )
 
 
-def calculate_replay_statistics(sample, x, areas):
+def calculate_replay_statistics(
+    sample,
+    x,
+    areas,
+):
     """
-    Классифицирует каждый фактически сгенерированный элемент
-    по трём закрашенным областям.
+    Классифицирует каждый элемент выборки
+    ровно в одну из трёх областей.
 
     Оранжевая:
-        x <= граница f_min
+        x <= orange_boundary
 
     Синяя:
-        граница f_min < x <= граница f
+        orange_boundary < x < green_boundary
 
     Зелёная:
-        x >= граница f_max
-
-    Остальные элементы не попадают ни в одну закрашенную область.
+        x >= green_boundary
     """
 
-    orange_boundary = x[areas["f_min"]["right"]]
-    blue_boundary = x[areas["f"]["right"]]
-    green_boundary = x[areas["f_max"]["left"]]
+    orange_boundary = x[
+        areas["orange"]["right"]
+    ]
 
-    orange_mask = sample <= orange_boundary
+    green_boundary = x[
+        areas["green"]["left"]
+    ]
+
+    orange_mask = (
+        sample <= orange_boundary
+    )
 
     blue_mask = (
         (sample > orange_boundary)
-        & (sample <= blue_boundary)
+        & (sample < green_boundary)
     )
 
-    green_mask = sample >= green_boundary
+    green_mask = (
+        sample >= green_boundary
+    )
 
-    orange_count = int(np.sum(orange_mask))
-    blue_count = int(np.sum(blue_mask))
-    green_count = int(np.sum(green_mask))
+    orange_count = int(
+        np.sum(orange_mask)
+    )
+
+    blue_count = int(
+        np.sum(blue_mask)
+    )
+
+    green_count = int(
+        np.sum(green_mask)
+    )
 
     total_count = len(sample)
 
@@ -243,44 +300,45 @@ def calculate_replay_statistics(sample, x, areas):
         + green_count
     )
 
-    outside_count = total_count - covered_count
+    if covered_count != total_count:
+        raise RuntimeError(
+            "Не удалось классифицировать все элементы "
+            "выборки."
+        )
 
     return {
         "orange": {
             "count": orange_count,
-            "ratio": orange_count / total_count
+            "ratio": orange_count / total_count,
         },
         "blue": {
             "count": blue_count,
-            "ratio": blue_count / total_count
+            "ratio": blue_count / total_count,
         },
         "green": {
             "count": green_count,
-            "ratio": green_count / total_count
-        },
-        "outside": {
-            "count": outside_count,
-            "ratio": outside_count / total_count
+            "ratio": green_count / total_count,
         },
         "total": total_count,
         "boundaries": {
             "orange": orange_boundary,
-            "blue": blue_boundary,
-            "green": green_boundary
-        }
+            "green": green_boundary,
+        },
     }
 
 
-def run_replays(k, theta, N, replays, x, areas, rng):
+def run_replays(
+    k,
+    theta,
+    N,
+    replays,
+    x,
+    areas,
+    rng,
+):
     """
     Выполняет replays независимых экспериментов.
-
-    Каждый replay:
-        1. генерирует N реальных элементов;
-        2. определяет, куда попал каждый элемент;
-        3. сохраняет фактическое количество элементов.
     """
-
     if replays <= 0:
         raise ValueError("replays должно быть > 0")
 
@@ -291,13 +349,13 @@ def run_replays(k, theta, N, replays, x, areas, rng):
             k=k,
             theta=theta,
             N=N,
-            rng=rng
+            rng=rng,
         )
 
         statistics = calculate_replay_statistics(
             sample=sample,
             x=x,
-            areas=areas
+            areas=areas,
         )
 
         results.append({
@@ -305,8 +363,7 @@ def run_replays(k, theta, N, replays, x, areas, rng):
             "orange_count": statistics["orange"]["count"],
             "blue_count": statistics["blue"]["count"],
             "green_count": statistics["green"]["count"],
-            "outside_count": statistics["outside"]["count"],
-            "total": statistics["total"]
+            "total": statistics["total"],
         })
 
     return results
@@ -314,15 +371,39 @@ def run_replays(k, theta, N, replays, x, areas, rng):
 
 def calculate_replay_totals(replay_results):
     """
-    Суммирует фактические результаты всех replay.
+    Суммирует результаты всех replay.
     """
+    total = sum(
+        result["total"]
+        for result in replay_results
+    )
 
-    total = sum(result["total"] for result in replay_results)
+    orange_count = sum(
+        result["orange_count"]
+        for result in replay_results
+    )
 
-    orange_count = sum(result["orange_count"] for result in replay_results)
-    blue_count = sum(result["blue_count"] for result in replay_results)
-    green_count = sum(result["green_count"] for result in replay_results)
-    outside_count = sum(result["outside_count"] for result in replay_results)
+    blue_count = sum(
+        result["blue_count"]
+        for result in replay_results
+    )
+
+    green_count = sum(
+        result["green_count"]
+        for result in replay_results
+    )
+
+    covered_count = (
+        orange_count
+        + blue_count
+        + green_count
+    )
+
+    if covered_count != total:
+        raise RuntimeError(
+            "Сумма трёх областей не равна общему "
+            "количеству элементов."
+        )
 
     return {
         "orange_count": orange_count,
@@ -331,10 +412,9 @@ def calculate_replay_totals(replay_results):
         "blue_ratio": blue_count / total,
         "green_count": green_count,
         "green_ratio": green_count / total,
-        "outside_count": outside_count,
-        "outside_ratio": outside_count / total,
-        "total": total
+        "total": total,
     }
+
 
 def calculate_area_statistics(
     k,
@@ -342,100 +422,122 @@ def calculate_area_statistics(
     N,
     x,
     areas,
-    replay_results
+    replay_results,
 ):
     """
-    Рассчитывает статистику для трёх областей:
+    Рассчитывает статистику трёх областей.
 
-    1. Математическое ожидание количества элементов.
-    2. Частоту попадания элементов.
-    3. Среднее количество элементов за replay.
-    4. Среднее квадратическое отклонение.
-    5. Дисперсию.
+    Границы определяются только по f_min и f_max.
 
-    Математическое ожидание рассчитывается теоретически:
-        E[X] = N * P(area)
+    Оранжевая:
+        X <= orange_boundary
 
-    Остальные показатели рассчитываются по фактическим
-    результатам всех replay.
+    Синяя:
+        orange_boundary < X < green_boundary
+
+    Зелёная:
+        X >= green_boundary
     """
 
     orange_boundary = x[
-        areas["f_min"]["right"]
-    ]
-
-    blue_boundary = x[
-        areas["f"]["right"]
+        areas["orange"]["right"]
     ]
 
     green_boundary = x[
-        areas["f_max"]["left"]
+        areas["green"]["left"]
     ]
 
-    # Теоретические вероятности областей.
+    # Теоретические вероятности относительно
+    # исходного распределения Gamma(k, theta).
+
     p_orange = gamma.cdf(
         orange_boundary,
         a=k,
-        scale=theta
+        scale=theta,
+    )
+
+    p_green_start = gamma.cdf(
+        green_boundary,
+        a=k,
+        scale=theta,
     )
 
     p_blue = (
-        gamma.cdf(
-            blue_boundary,
-            a=k,
-            scale=theta
-        )
-        - gamma.cdf(
-            orange_boundary,
-            a=k,
-            scale=theta
-        )
+        p_green_start
+        - p_orange
     )
 
-    p_green = 1 - gamma.cdf(
-        green_boundary,
-        a=k,
-        scale=theta
+    p_green = (
+        1
+        - p_green_start
     )
 
     theoretical_probabilities = {
         "orange": p_orange,
         "blue": p_blue,
-        "green": p_green
+        "green": p_green,
     }
+
+    probability_sum = (
+        p_orange
+        + p_blue
+        + p_green
+    )
+
+    if not np.isclose(
+        probability_sum,
+        1.0,
+        atol=1e-10,
+    ):
+        raise RuntimeError(
+            "Теоретические вероятности трёх областей "
+            "не дают сумму 1."
+        )
 
     statistics = {}
 
-    for area in ["orange", "blue", "green"]:
+    for area in [
+        "orange",
+        "blue",
+        "green",
+    ]:
         counts = np.array(
             [
                 replay[f"{area}_count"]
                 for replay in replay_results
             ],
-            dtype=float
+            dtype=float,
         )
 
-        total_elements = np.sum(counts)
+        total_elements = np.sum(
+            counts
+        )
 
         total_replay_elements = (
-            len(replay_results) * int(N)
+            len(replay_results)
+            * int(N)
         )
 
-        probability = theoretical_probabilities[area]
+        probability = (
+            theoretical_probabilities[area]
+        )
 
         mathematical_expectation = (
             N * probability
         )
 
         frequency = (
-            total_elements / total_replay_elements
+            total_elements
+            / total_replay_elements
         )
 
-        mean = np.mean(counts)
+        mean = np.mean(
+            counts
+        )
 
         variance = np.var(
             counts,
-            ddof=0
+            ddof=0,
         )
 
         standard_deviation = np.sqrt(
@@ -446,12 +548,18 @@ def calculate_area_statistics(
             "mathematical_expectation": float(
                 mathematical_expectation
             ),
-            "frequency": float(frequency),
-            "mean": float(mean),
+            "frequency": float(
+                frequency
+            ),
+            "mean": float(
+                mean
+            ),
             "standard_deviation": float(
                 standard_deviation
             ),
-            "variance": float(variance)
+            "variance": float(
+                variance
+            ),
         }
 
     return statistics

@@ -1,6 +1,7 @@
 import csv
 import os
 
+
 RESULTS_DIR = "results"
 
 
@@ -12,43 +13,39 @@ def get_experiment_dir(k, N):
         k_X/
             N_Y/
     """
-
     directory = os.path.join(
         RESULTS_DIR,
         f"k_{k}",
-        f"N_{N}"
+        f"N_{N}",
     )
 
     os.makedirs(
         directory,
-        exist_ok=True
+        exist_ok=True,
     )
 
     return directory
 
 
 def save_experiment(
-        k,
-        theta,
-        N,
-        m,
-        replays,
-        x,
-        areas,
-        figure,
-        replay_results,
-        replay_totals,
-        area_statistics
+    k,
+    theta,
+    N,
+    m,
+    replays,
+    x,
+    areas,
+    figure,
+    replay_results,
+    replay_totals,
+    area_statistics,
 ):
     """
     Полностью сохраняет один эксперимент.
-
-    Именно эта функция отвечает за все файлы.
     """
-
     output_dir = get_experiment_dir(
         k=k,
-        N=N
+        N=N,
     )
 
     save_graph(
@@ -56,7 +53,7 @@ def save_experiment(
         output_dir=output_dir,
         k=k,
         theta=theta,
-        N=N
+        N=N,
     )
 
     save_replays(
@@ -64,7 +61,7 @@ def save_experiment(
         output_dir=output_dir,
         k=k,
         theta=theta,
-        N=N
+        N=N,
     )
 
     save_report(
@@ -78,44 +75,53 @@ def save_experiment(
         replay_results=replay_results,
         replay_totals=replay_totals,
         area_statistics=area_statistics,
-        output_dir=output_dir
+        output_dir=output_dir,
     )
 
 
 def save_graph(
-        figure,
-        output_dir,
-        k,
-        theta,
-        N
+    figure,
+    output_dir,
+    k,
+    theta,
+    N,
 ):
     graph_file = os.path.join(
         output_dir,
         f"distribution_"
         f"k_{k}_"
         f"theta_{theta}_"
-        f"N_{N}.png"
+        f"N_{N}.png",
     )
 
     figure.savefig(
         graph_file,
-        dpi=150
+        dpi=150,
     )
 
     figure.clf()
 
 
-def save_replays(replay_results, output_dir, k, theta, N):
+def save_replays(
+    replay_results,
+    output_dir,
+    k,
+    theta,
+    N,
+):
     filename = os.path.join(
         output_dir,
-        f"replays_k_{k}_theta_{theta}_N_{N}.csv"
+        f"replays_"
+        f"k_{k}_"
+        f"theta_{theta}_"
+        f"N_{N}.csv",
     )
 
     with open(
         filename,
         "w",
         newline="",
-        encoding="utf-8"
+        encoding="utf-8",
     ) as file:
         writer = csv.writer(file)
 
@@ -124,7 +130,6 @@ def save_replays(replay_results, output_dir, k, theta, N):
             "orange_count",
             "blue_count",
             "green_count",
-            "outside_count",
             "total",
         ])
 
@@ -134,7 +139,6 @@ def save_replays(replay_results, output_dir, k, theta, N):
                 result["orange_count"],
                 result["blue_count"],
                 result["green_count"],
-                result["outside_count"],
                 result["total"],
             ])
 
@@ -150,26 +154,22 @@ def save_report(
     replay_results,
     replay_totals,
     area_statistics,
-    output_dir
+    output_dir,
 ):
     report_file = os.path.join(
         output_dir,
         f"report_"
         f"k_{k}_"
         f"theta_{theta}_"
-        f"N_{N}.md"
+        f"N_{N}.md",
     )
 
     orange_boundary = x[
-        areas["f_min"]["right"]
-    ]
-
-    blue_boundary = x[
-        areas["f"]["right"]
+        areas["orange"]["right"]
     ]
 
     green_boundary = x[
-        areas["f_max"]["left"]
+        areas["green"]["left"]
     ]
 
     lines = [
@@ -183,6 +183,23 @@ def save_report(
         "",
         "## Границы закрашенных областей",
         "",
+        (
+            "Оранжевая область определяется по распределению "
+            f"минимума `f_min(x)` и содержит {m:.0%} его площади."
+        ),
+        "",
+        (
+            "Зелёная область определяется по распределению "
+            f"максимума `f_max(x)` и содержит {m:.0%} его площади."
+        ),
+        "",
+        (
+            "Синяя область — весь промежуток между правой "
+            "границей оранжевой области и левой границей "
+            "зелёной области. Она строится по исходному "
+            "распределению `f(x)`."
+        ),
+        "",
         "| Область | Интервал |",
         "|---|---|",
         (
@@ -191,8 +208,8 @@ def save_report(
         ),
         (
             f"| Синяя | "
-            f"`{orange_boundary:.12f} < x <= "
-            f"{blue_boundary:.12f}` |"
+            f"`{orange_boundary:.12f} < x < "
+            f"{green_boundary:.12f}` |"
         ),
         (
             f"| Зелёная | "
@@ -217,11 +234,6 @@ def save_report(
             f"| Зелёная | "
             f"{replay_totals['green_count']} | "
             f"{replay_totals['green_ratio']:.2%} |"
-        ),
-        (
-            f"| Вне областей | "
-            f"{replay_totals['outside_count']} | "
-            f"{replay_totals['outside_ratio']:.2%} |"
         ),
         (
             f"| **Всего** | "
@@ -270,10 +282,10 @@ def save_report(
         "## Статистика каждого replay",
         "",
         (
-            "| Replay | Оранжевая | Синяя | Зелёная | "
-            "Вне областей | Всего |"
+            "| Replay | Оранжевая | Синяя | "
+            "Зелёная | Всего |"
         ),
-        "|---:|---:|---:|---:|---:|---:|"
+        "|---:|---:|---:|---:|---:|",
     ]
 
     for replay in replay_results:
@@ -282,14 +294,13 @@ def save_report(
             f"{replay['orange_count']} | "
             f"{replay['blue_count']} | "
             f"{replay['green_count']} | "
-            f"{replay['outside_count']} | "
             f"{replay['total']} |"
         )
 
     with open(
         report_file,
         "w",
-        encoding="utf-8"
+        encoding="utf-8",
     ) as file:
         file.write(
             "\n".join(lines)

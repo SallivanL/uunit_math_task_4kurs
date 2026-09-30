@@ -39,7 +39,7 @@ def main():
                 x, f, f_min, f_max = calculate_densities(
                     k=k,
                     theta=theta,
-                    N=N
+                    N=N,
                 )
 
                 areas = calculate_areas(
@@ -47,7 +47,7 @@ def main():
                     f=f,
                     f_min=f_min,
                     f_max=f_max,
-                    m=m
+                    m=m,
                 )
 
                 figure = plot_three_densities(
@@ -58,7 +58,7 @@ def main():
                     areas=areas,
                     k=k,
                     theta=theta,
-                    N=N
+                    N=N,
                 )
 
                 replay_results = run_replays(
@@ -68,7 +68,7 @@ def main():
                     replays=replays,
                     x=x,
                     areas=areas,
-                    rng=rng
+                    rng=rng,
                 )
 
                 replay_totals = calculate_replay_totals(
@@ -81,7 +81,7 @@ def main():
                     N=N,
                     x=x,
                     areas=areas,
-                    replay_results=replay_results
+                    replay_results=replay_results,
                 )
 
                 save_experiment(
@@ -95,7 +95,7 @@ def main():
                     figure=figure,
                     replay_results=replay_results,
                     replay_totals=replay_totals,
-                    area_statistics=area_statistics
+                    area_statistics=area_statistics,
                 )
 
 
