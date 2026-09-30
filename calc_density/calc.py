@@ -5,10 +5,12 @@ from scipy.stats import gamma
 def calculate_densities(k, theta, N, points=5000):
     """
     Рассчитывает:
+
         f      — исходное распределение Gamma(k, theta)
         f_min  — распределение минимума выборки размера N
         f_max  — распределение максимума выборки размера N
     """
+
     if k <= 0:
         raise ValueError("k должно быть > 0")
 
@@ -69,6 +71,7 @@ def find_left_area(x, y, m):
     Результат:
         [0, right]
     """
+
     if not 0 < m <= 1:
         raise ValueError("m должно быть в диапазоне (0, 1]")
 
@@ -111,6 +114,7 @@ def find_right_area(x, y, m):
     Результат:
         [left, x_max]
     """
+
     if not 0 < m <= 1:
         raise ValueError("m должно быть в диапазоне (0, 1]")
 
@@ -149,10 +153,8 @@ def find_middle_area(x, left_index, right_index):
 
     Левая граница берётся из f_min.
     Правая граница берётся из f_max.
-
-    То есть:
-        left_boundary < x < right_boundary
     """
+
     if left_index >= right_index:
         raise ValueError(
             "Левая граница должна быть меньше правой"
@@ -182,16 +184,13 @@ def calculate_areas(
     2. Синяя:
        промежуток между правой границей оранжевой
        и левой границей зелёной.
-       Эта область строится по исходному f.
 
     3. Зелёная:
        правая область f_max, содержащая m площади.
 
-    Таким образом всё пространство x разбивается на:
+    Всё пространство x разбивается на:
 
         ОРАНЖЕВАЯ | СИНЯЯ | ЗЕЛЁНАЯ
-
-    без незакрашенного промежутка.
     """
 
     orange = find_left_area(
@@ -221,9 +220,9 @@ def calculate_areas(
 
 def generate_sample(k, theta, N, rng):
     """
-    Генерирует одну выборку из N элементов
-    Gamma(k, theta).
+    Генерирует одну выборку из N элементов Gamma(k, theta).
     """
+
     if k <= 0:
         raise ValueError("k должно быть > 0")
 
@@ -339,6 +338,7 @@ def run_replays(
     """
     Выполняет replays независимых экспериментов.
     """
+
     if replays <= 0:
         raise ValueError("replays должно быть > 0")
 
@@ -369,10 +369,134 @@ def run_replays(
     return results
 
 
+def calculate_replay_ratios(replay_results):
+    """
+    Рассчитывает n / N для каждой области
+    отдельно для каждого replay.
+
+    Для каждого replay:
+
+        orange_ratio = n1 / N
+        blue_ratio   = n2 / N
+        green_ratio  = n3 / N
+
+    Сумма трёх долей для каждого replay должна быть равна 1.
+    """
+
+    if not replay_results:
+        raise ValueError(
+            "replay_results не должен быть пустым"
+        )
+
+    ratios = []
+
+    for result in replay_results:
+        total = result["total"]
+
+        if total <= 0:
+            raise ValueError(
+                "Количество элементов replay должно быть > 0"
+            )
+
+        orange_ratio = (
+            result["orange_count"] / total
+        )
+
+        blue_ratio = (
+            result["blue_count"] / total
+        )
+
+        green_ratio = (
+            result["green_count"] / total
+        )
+
+        ratio_sum = (
+            orange_ratio
+            + blue_ratio
+            + green_ratio
+        )
+
+        if not np.isclose(
+            ratio_sum,
+            1.0,
+            atol=1e-12,
+        ):
+            raise RuntimeError(
+                "Сумма долей областей для replay "
+                "не равна 1."
+            )
+
+        ratios.append({
+            "replay": result["replay"],
+            "orange_ratio": float(orange_ratio),
+            "blue_ratio": float(blue_ratio),
+            "green_ratio": float(green_ratio),
+        })
+
+    return ratios
+
+
+def calculate_average_replay_ratios(replay_ratios):
+    """
+    Рассчитывает среднюю долю элементов
+    в каждой области по всем replay.
+
+    Результат:
+
+        mean(n1 / N)
+        mean(n2 / N)
+        mean(n3 / N)
+    """
+
+    if not replay_ratios:
+        raise ValueError(
+            "replay_ratios не должен быть пустым"
+        )
+
+    orange_ratio = np.mean([
+        replay["orange_ratio"]
+        for replay in replay_ratios
+    ])
+
+    blue_ratio = np.mean([
+        replay["blue_ratio"]
+        for replay in replay_ratios
+    ])
+
+    green_ratio = np.mean([
+        replay["green_ratio"]
+        for replay in replay_ratios
+    ])
+
+    ratio_sum = (
+        orange_ratio
+        + blue_ratio
+        + green_ratio
+    )
+
+    if not np.isclose(
+        ratio_sum,
+        1.0,
+        atol=1e-12,
+    ):
+        raise RuntimeError(
+            "Средние доли трёх областей "
+            "не дают сумму 1."
+        )
+
+    return {
+        "orange_ratio": float(orange_ratio),
+        "blue_ratio": float(blue_ratio),
+        "green_ratio": float(green_ratio),
+        "total": float(ratio_sum),
+    }
+
+
 def calculate_replay_totals(replay_results):
     """
     Суммирует результаты всех replay.
     """
+
     total = sum(
         result["total"]
         for result in replay_results
@@ -446,9 +570,6 @@ def calculate_area_statistics(
     green_boundary = x[
         areas["green"]["left"]
     ]
-
-    # Теоретические вероятности относительно
-    # исходного распределения Gamma(k, theta).
 
     p_orange = gamma.cdf(
         orange_boundary,

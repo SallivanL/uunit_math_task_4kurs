@@ -20,9 +20,10 @@ def plot_three_densities(
 
     Области по x:
 
-        Оранжевая | Синяя | Зелёная
+        ОРАНЖЕВАЯ | СИНЯЯ | ЗЕЛЁНАЯ
 
     Границы:
+
         оранжевая — определяется через f_min и m
         зелёная   — определяется через f_max и m
         синяя     — промежуток между ними
@@ -78,9 +79,6 @@ def plot_three_densities(
 
     # --------------------------------------------------
     # Синяя область — исходное f
-    #
-    # Начинается после границы f_min
-    # и заканчивается перед границей f_max.
     # --------------------------------------------------
 
     blue_left = blue_area["left"]
@@ -140,6 +138,95 @@ def plot_three_densities(
 
     plt.legend(
         fontsize=11,
+    )
+
+    plt.tight_layout()
+
+    return figure
+
+
+def plot_replay_histogram(
+    average_replay_ratios,
+    k,
+    theta,
+    N,
+    replays,
+):
+    """
+    Строит одну итоговую гистограмму.
+
+    Для каждой из трёх областей рассчитывается
+    средняя доля точек n / N по всем replay.
+
+    Получается ровно три столбца:
+
+        Область 1 → mean(n1 / N)
+        Область 2 → mean(n2 / N)
+        Область 3 → mean(n3 / N)
+
+    Сумма высот трёх столбцов равна 1.
+    """
+
+    figure = plt.figure(
+        figsize=(9, 7)
+    )
+
+    values = [
+        average_replay_ratios["orange_ratio"],
+        average_replay_ratios["blue_ratio"],
+        average_replay_ratios["green_ratio"],
+    ]
+
+    labels = [
+        "Область 1",
+        "Область 2",
+        "Область 3",
+    ]
+
+    bars = plt.bar(
+        labels,
+        values,
+        width=0.6,
+    )
+
+    # Подписываем значение над каждым столбцом.
+
+    for bar, value in zip(bars, values):
+        plt.text(
+            bar.get_x()
+            + bar.get_width() / 2,
+            value,
+            f"{value:.4f}",
+            ha="center",
+            va="bottom",
+            fontsize=11,
+        )
+
+    plt.ylim(
+        0,
+        1.05,
+    )
+
+    plt.ylabel(
+        "Средняя доля точек n / N",
+        fontsize=13,
+    )
+
+    plt.xlabel(
+        "Область",
+        fontsize=13,
+    )
+
+    plt.title(
+        "Среднее распределение точек по областям: "
+        f"k={k}, θ={theta}, N={N}, "
+        f"replays={replays}",
+        fontsize=15,
+    )
+
+    plt.grid(
+        axis="y",
+        alpha=0.25,
     )
 
     plt.tight_layout()

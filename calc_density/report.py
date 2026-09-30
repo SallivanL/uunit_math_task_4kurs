@@ -13,6 +13,7 @@ def get_experiment_dir(k, N):
         k_X/
             N_Y/
     """
+
     directory = os.path.join(
         RESULTS_DIR,
         f"k_{k}",
@@ -36,13 +37,17 @@ def save_experiment(
     x,
     areas,
     figure,
+    histogram,
     replay_results,
+    replay_ratios,
+    average_replay_ratios,
     replay_totals,
     area_statistics,
 ):
     """
     Полностью сохраняет один эксперимент.
     """
+
     output_dir = get_experiment_dir(
         k=k,
         N=N,
@@ -50,6 +55,14 @@ def save_experiment(
 
     save_graph(
         figure=figure,
+        output_dir=output_dir,
+        k=k,
+        theta=theta,
+        N=N,
+    )
+
+    save_histogram(
+        figure=histogram,
         output_dir=output_dir,
         k=k,
         theta=theta,
@@ -73,6 +86,8 @@ def save_experiment(
         x=x,
         areas=areas,
         replay_results=replay_results,
+        replay_ratios=replay_ratios,
+        average_replay_ratios=average_replay_ratios,
         replay_totals=replay_totals,
         area_statistics=area_statistics,
         output_dir=output_dir,
@@ -86,6 +101,10 @@ def save_graph(
     theta,
     N,
 ):
+    """
+    Сохраняет основной график распределений.
+    """
+
     graph_file = os.path.join(
         output_dir,
         f"distribution_"
@@ -102,6 +121,34 @@ def save_graph(
     figure.clf()
 
 
+def save_histogram(
+    figure,
+    output_dir,
+    k,
+    theta,
+    N,
+):
+    """
+    Сохраняет итоговую гистограмму
+    средних долей по трём областям.
+    """
+
+    histogram_file = os.path.join(
+        output_dir,
+        f"histogram_"
+        f"k_{k}_"
+        f"theta_{theta}_"
+        f"N_{N}.png",
+    )
+
+    figure.savefig(
+        histogram_file,
+        dpi=150,
+    )
+
+    figure.clf()
+
+
 def save_replays(
     replay_results,
     output_dir,
@@ -109,6 +156,10 @@ def save_replays(
     theta,
     N,
 ):
+    """
+    Сохраняет результаты каждого replay в CSV.
+    """
+
     filename = os.path.join(
         output_dir,
         f"replays_"
@@ -123,6 +174,7 @@ def save_replays(
         newline="",
         encoding="utf-8",
     ) as file:
+
         writer = csv.writer(file)
 
         writer.writerow([
@@ -152,10 +204,16 @@ def save_report(
     x,
     areas,
     replay_results,
+    replay_ratios,
+    average_replay_ratios,
     replay_totals,
     area_statistics,
     output_dir,
 ):
+    """
+    Сохраняет полный Markdown-отчёт.
+    """
+
     report_file = os.path.join(
         output_dir,
         f"report_"
@@ -279,6 +337,71 @@ def save_report(
             f"{area_statistics['green']['variance']:.6f} |"
         ),
         "",
+        "## Средняя доля точек по областям",
+        "",
+        (
+            f"Значения `n / N` усреднены по всем "
+            f"{replays} replay."
+        ),
+        "",
+        (
+            "| Область | Среднее n/N | "
+            "Среднее количество точек |"
+        ),
+        "|---|---:|---:|",
+        (
+            f"| Область 1 | "
+            f"{average_replay_ratios['orange_ratio']:.6f} | "
+            f"{average_replay_ratios['orange_ratio'] * N:.6f} |"
+        ),
+        (
+            f"| Область 2 | "
+            f"{average_replay_ratios['blue_ratio']:.6f} | "
+            f"{average_replay_ratios['blue_ratio'] * N:.6f} |"
+        ),
+        (
+            f"| Область 3 | "
+            f"{average_replay_ratios['green_ratio']:.6f} | "
+            f"{average_replay_ratios['green_ratio'] * N:.6f} |"
+        ),
+        (
+            f"| **Сумма** | "
+            f"**{average_replay_ratios['total']:.6f}** | "
+            f"**{average_replay_ratios['total'] * N:.6f}** |"
+        ),
+        "",
+        "## Доли точек по каждому replay",
+        "",
+        (
+            "Для проверки приведены значения `n / N` "
+            "для каждого replay."
+        ),
+        "",
+        (
+            "| Replay | Область 1 (n1/N) | "
+            "Область 2 (n2/N) | Область 3 (n3/N) | "
+            "Сумма |"
+        ),
+        "|---:|---:|---:|---:|---:|",
+    ]
+
+    for ratio in replay_ratios:
+        ratio_sum = (
+            ratio["orange_ratio"]
+            + ratio["blue_ratio"]
+            + ratio["green_ratio"]
+        )
+
+        lines.append(
+            f"| {ratio['replay']} | "
+            f"{ratio['orange_ratio']:.6f} | "
+            f"{ratio['blue_ratio']:.6f} | "
+            f"{ratio['green_ratio']:.6f} | "
+            f"{ratio_sum:.6f} |"
+        )
+
+    lines.extend([
+        "",
         "## Статистика каждого replay",
         "",
         (
@@ -286,7 +409,7 @@ def save_report(
             "Зелёная | Всего |"
         ),
         "|---:|---:|---:|---:|---:|",
-    ]
+    ])
 
     for replay in replay_results:
         lines.append(
