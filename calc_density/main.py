@@ -1,5 +1,3 @@
-# main.py
-
 import os
 import shutil
 
@@ -13,7 +11,6 @@ from calc import (
     calculate_area_statistics,
 )
 from plotting import plot_three_densities
-from points import get_plot_points
 from report import save_experiment
 
 
@@ -22,7 +19,8 @@ def main():
     replays = 40
 
     k_values = [
-        1, 8,
+        1,
+        8,
     ]
 
     theta_values = [1]
@@ -63,16 +61,6 @@ def main():
                     N=N
                 )
 
-                points = get_plot_points(
-                    x=x,
-                    f=f,
-                    f_min=f_min,
-                    f_max=f_max,
-                    k=k,
-                    theta=theta,
-                    N=N
-                )
-
                 replay_results = run_replays(
                     k=k,
                     theta=theta,
@@ -104,11 +92,10 @@ def main():
                     replays=replays,
                     x=x,
                     areas=areas,
-                    points=points,
                     figure=figure,
                     replay_results=replay_results,
                     replay_totals=replay_totals,
-                    area_statistics = area_statistics
+                    area_statistics=area_statistics
                 )
 
 

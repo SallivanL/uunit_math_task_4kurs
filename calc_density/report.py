@@ -1,5 +1,3 @@
-# report.py
-
 import csv
 import os
 
@@ -37,7 +35,6 @@ def save_experiment(
         replays,
         x,
         areas,
-        points,
         figure,
         replay_results,
         replay_totals,
@@ -56,14 +53,6 @@ def save_experiment(
 
     save_graph(
         figure=figure,
-        output_dir=output_dir,
-        k=k,
-        theta=theta,
-        N=N
-    )
-
-    save_points(
-        points=points,
         output_dir=output_dir,
         k=k,
         theta=theta,
@@ -113,52 +102,7 @@ def save_graph(
         dpi=150
     )
 
-    # Закрываем figure после сохранения.
     figure.clf()
-
-
-def save_points(
-        points,
-        output_dir,
-        k,
-        theta,
-        N
-):
-    points_file = os.path.join(
-        output_dir,
-        f"points_"
-        f"k_{k}_"
-        f"theta_{theta}_"
-        f"N_{N}.md"
-    )
-
-    lines = [
-        f"# Точки графика",
-        "",
-        f"- `k = {k}`",
-        f"- `theta = {theta}`",
-        f"- `N = {N}`",
-        "",
-        "| x | f(x) | f_min(x) | f_max(x) |",
-        "|---:|---:|---:|---:|"
-    ]
-
-    for point in points["points"]:
-        lines.append(
-            f"| {point['x']:.12f} | "
-            f"{point['f']:.12f} | "
-            f"{point['f_min']:.12f} | "
-            f"{point['f_max']:.12f} |"
-        )
-
-    with open(
-            points_file,
-            "w",
-            encoding="utf-8"
-    ) as file:
-        file.write(
-            "\n".join(lines)
-        )
 
 
 def save_replays(replay_results, output_dir, k, theta, N):
@@ -167,7 +111,12 @@ def save_replays(replay_results, output_dir, k, theta, N):
         f"replays_k_{k}_theta_{theta}_N_{N}.csv"
     )
 
-    with open(filename, "w", newline="", encoding="utf-8") as file:
+    with open(
+        filename,
+        "w",
+        newline="",
+        encoding="utf-8"
+    ) as file:
         writer = csv.writer(file)
 
         writer.writerow([
