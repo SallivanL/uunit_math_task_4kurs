@@ -37,12 +37,15 @@ def save_experiment(
     x,
     areas,
     figure,
+    cdf_figure,
     histogram,
+    cdf_histogram,
     replay_results,
     replay_ratios,
     average_replay_ratios,
     replay_totals,
     area_statistics,
+    cdf_area_probabilities,
 ):
     """
     Полностью сохраняет один эксперимент.
@@ -61,8 +64,24 @@ def save_experiment(
         N=N,
     )
 
+    save_cdf_graph(
+        figure=cdf_figure,
+        output_dir=output_dir,
+        k=k,
+        theta=theta,
+        N=N,
+    )
+
     save_histogram(
         figure=histogram,
+        output_dir=output_dir,
+        k=k,
+        theta=theta,
+        N=N,
+    )
+
+    save_cdf_histogram(
+        figure=cdf_histogram,
         output_dir=output_dir,
         k=k,
         theta=theta,
@@ -90,6 +109,7 @@ def save_experiment(
         average_replay_ratios=average_replay_ratios,
         replay_totals=replay_totals,
         area_statistics=area_statistics,
+        cdf_area_probabilities=cdf_area_probabilities,
         output_dir=output_dir,
     )
 
@@ -121,6 +141,33 @@ def save_graph(
     figure.clf()
 
 
+def save_cdf_graph(
+    figure,
+    output_dir,
+    k,
+    theta,
+    N,
+):
+    """
+    Сохраняет график F(x) с отмеченными границами.
+    """
+
+    cdf_file = os.path.join(
+        output_dir,
+        f"cdf_"
+        f"k_{k}_"
+        f"theta_{theta}_"
+        f"N_{N}.png",
+    )
+
+    figure.savefig(
+        cdf_file,
+        dpi=150,
+    )
+
+    figure.clf()
+
+
 def save_histogram(
     figure,
     output_dir,
@@ -136,6 +183,34 @@ def save_histogram(
     histogram_file = os.path.join(
         output_dir,
         f"histogram_"
+        f"k_{k}_"
+        f"theta_{theta}_"
+        f"N_{N}.png",
+    )
+
+    figure.savefig(
+        histogram_file,
+        dpi=150,
+    )
+
+    figure.clf()
+
+
+def save_cdf_histogram(
+    figure,
+    output_dir,
+    k,
+    theta,
+    N,
+):
+    """
+    Сохраняет гистограмму теоретических вероятностей,
+    рассчитанных через F(x).
+    """
+
+    histogram_file = os.path.join(
+        output_dir,
+        f"cdf_histogram_"
         f"k_{k}_"
         f"theta_{theta}_"
         f"N_{N}.png",
@@ -208,6 +283,7 @@ def save_report(
     average_replay_ratios,
     replay_totals,
     area_statistics,
+    cdf_area_probabilities,
     output_dir,
 ):
     """
@@ -272,6 +348,62 @@ def save_report(
         (
             f"| Зелёная | "
             f"`x >= {green_boundary:.12f}` |"
+        ),
+        "",
+        "## Расчёт через функцию распределения F(x)",
+        "",
+        (
+            "Те же две границы областей переносятся на функцию "
+            "распределения исходного Gamma-распределения."
+        ),
+        "",
+        "| Параметр | Значение |",
+        "|---|---:|",
+        (
+            f"| Граница x₁ | "
+            f"{cdf_area_probabilities['orange_boundary']:.12f} |"
+        ),
+        (
+            f"| F(x₁) | "
+            f"{cdf_area_probabilities['cdf_orange']:.12f} |"
+        ),
+        (
+            f"| Граница x₂ | "
+            f"{cdf_area_probabilities['green_boundary']:.12f} |"
+        ),
+        (
+            f"| F(x₂) | "
+            f"{cdf_area_probabilities['cdf_green']:.12f} |"
+        ),
+        "",
+        "### Теоретические вероятности областей",
+        "",
+        (
+            "Вероятности получаются как приращения функции "
+            "распределения:"
+        ),
+        "",
+        "- `P(Область 1) = F(x₁)`",
+        "- `P(Область 2) = F(x₂) - F(x₁)`",
+        "- `P(Область 3) = 1 - F(x₂)`",
+        "",
+        "| Область | Формула | Теоретическая вероятность |",
+        "|---|---|---:|",
+        (
+            f"| Область 1 | `F(x₁)` | "
+            f"{cdf_area_probabilities['orange_probability']:.6f} |"
+        ),
+        (
+            f"| Область 2 | `F(x₂) - F(x₁)` | "
+            f"{cdf_area_probabilities['blue_probability']:.6f} |"
+        ),
+        (
+            f"| Область 3 | `1 - F(x₂)` | "
+            f"{cdf_area_probabilities['green_probability']:.6f} |"
+        ),
+        (
+            f"| **Сумма** | | "
+            f"**{cdf_area_probabilities['total']:.6f}** |"
         ),
         "",
         "## Итог по всем replay",
@@ -368,6 +500,34 @@ def save_report(
             f"| **Сумма** | "
             f"**{average_replay_ratios['total']:.6f}** | "
             f"**{average_replay_ratios['total'] * N:.6f}** |"
+        ),
+        "",
+        "## Сравнение replay и расчёта через F(x)",
+        "",
+        (
+            "В таблице сопоставлены экспериментальные средние доли "
+            "и теоретические вероятности, полученные через F(x)."
+        ),
+        "",
+        "| Область | Среднее replay n/N | Теоретическая вероятность F(x) | Разница |",
+        "|---|---:|---:|---:|",
+        (
+            f"| Область 1 | "
+            f"{average_replay_ratios['orange_ratio']:.6f} | "
+            f"{cdf_area_probabilities['orange_probability']:.6f} | "
+            f"{average_replay_ratios['orange_ratio'] - cdf_area_probabilities['orange_probability']:+.6f} |"
+        ),
+        (
+            f"| Область 2 | "
+            f"{average_replay_ratios['blue_ratio']:.6f} | "
+            f"{cdf_area_probabilities['blue_probability']:.6f} | "
+            f"{average_replay_ratios['blue_ratio'] - cdf_area_probabilities['blue_probability']:+.6f} |"
+        ),
+        (
+            f"| Область 3 | "
+            f"{average_replay_ratios['green_ratio']:.6f} | "
+            f"{cdf_area_probabilities['green_probability']:.6f} | "
+            f"{average_replay_ratios['green_ratio'] - cdf_area_probabilities['green_probability']:+.6f} |"
         ),
         "",
         "## Доли точек по каждому replay",

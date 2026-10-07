@@ -21,12 +21,6 @@ def plot_three_densities(
     Области по x:
 
         ОРАНЖЕВАЯ | СИНЯЯ | ЗЕЛЁНАЯ
-
-    Границы:
-
-        оранжевая — определяется через f_min и m
-        зелёная   — определяется через f_max и m
-        синяя     — промежуток между ними
     """
 
     figure = plt.figure(
@@ -58,10 +52,6 @@ def plot_three_densities(
     blue_area = areas["blue"]
     green_area = areas["green"]
 
-    # --------------------------------------------------
-    # Оранжевая область — f_min
-    # --------------------------------------------------
-
     orange_left = orange_area["left"]
     orange_right = orange_area["right"]
 
@@ -77,10 +67,6 @@ def plot_three_densities(
         alpha=0.25,
     )
 
-    # --------------------------------------------------
-    # Синяя область — исходное f
-    # --------------------------------------------------
-
     blue_left = blue_area["left"]
     blue_right = blue_area["right"]
 
@@ -95,10 +81,6 @@ def plot_three_densities(
         ],
         alpha=0.25,
     )
-
-    # --------------------------------------------------
-    # Зелёная область — f_max
-    # --------------------------------------------------
 
     green_left = green_area["left"]
     green_right = green_area["right"]
@@ -129,6 +111,176 @@ def plot_three_densities(
     plt.ylabel(
         "Плотность",
         fontsize=13,
+    )
+
+    plt.grid(
+        True,
+        alpha=0.25,
+    )
+
+    plt.legend(
+        fontsize=11,
+    )
+
+    plt.tight_layout()
+
+    return figure
+
+
+def plot_cdf(
+    x,
+    cdf_area_probabilities,
+    areas,
+    k,
+    theta,
+    N,
+):
+    """
+    Строит функцию распределения F(x) исходного
+    Gamma-распределения и отмечает на ней те же
+    две границы, которые разделяют три области.
+
+    Для каждой границы проводится вертикальная
+    проекция до оси X и горизонтальная проекция
+    до значения F(x).
+
+    Точки:
+
+        x1 = граница оранжевой области
+        x2 = граница зелёной области
+
+        F(x1)
+        F(x2)
+    """
+
+    figure = plt.figure(
+        figsize=(11, 7)
+    )
+
+    x1 = cdf_area_probabilities[
+        "orange_boundary"
+    ]
+
+    x2 = cdf_area_probabilities[
+        "green_boundary"
+    ]
+
+    cdf_values = cdf_area_probabilities.get(
+        "cdf_values"
+    )
+
+    if cdf_values is None:
+        raise ValueError(
+            "cdf_values отсутствует в результатах "
+            "расчёта CDF."
+        )
+
+    cdf_x1 = cdf_area_probabilities[
+        "cdf_orange"
+    ]
+
+    cdf_x2 = cdf_area_probabilities[
+        "cdf_green"
+    ]
+
+    plt.plot(
+        x,
+        cdf_values,
+        linewidth=2,
+        label=r"$F(x)$ — функция распределения",
+    )
+
+    plt.scatter(
+        [x1, x2],
+        [cdf_x1, cdf_x2],
+        s=55,
+        zorder=5,
+        label="Точки границ областей",
+    )
+
+    plt.vlines(
+        x1,
+        0,
+        cdf_x1,
+        linestyles="--",
+        linewidth=1.5,
+    )
+
+    plt.vlines(
+        x2,
+        0,
+        cdf_x2,
+        linestyles="--",
+        linewidth=1.5,
+    )
+
+    plt.hlines(
+        cdf_x1,
+        0,
+        x1,
+        linestyles="--",
+        linewidth=1.5,
+    )
+
+    plt.hlines(
+        cdf_x2,
+        0,
+        x2,
+        linestyles="--",
+        linewidth=1.5,
+    )
+
+    plt.annotate(
+        f"F(x₁) = {cdf_x1:.4f}",
+        xy=(x1, cdf_x1),
+        xytext=(10, 10),
+        textcoords="offset points",
+        fontsize=11,
+    )
+
+    plt.annotate(
+        f"F(x₂) = {cdf_x2:.4f}",
+        xy=(x2, cdf_x2),
+        xytext=(10, -25),
+        textcoords="offset points",
+        fontsize=11,
+    )
+
+    plt.annotate(
+        f"x₁ = {x1:.4f}",
+        xy=(x1, 0),
+        xytext=(5, 8),
+        textcoords="offset points",
+        fontsize=10,
+    )
+
+    plt.annotate(
+        f"x₂ = {x2:.4f}",
+        xy=(x2, 0),
+        xytext=(5, 8),
+        textcoords="offset points",
+        fontsize=10,
+    )
+
+    plt.title(
+        "Функция распределения F(x) "
+        f"с границами областей: k={k}, θ={theta}, N={N}",
+        fontsize=15,
+    )
+
+    plt.xlabel(
+        "x",
+        fontsize=13,
+    )
+
+    plt.ylabel(
+        "F(x)",
+        fontsize=13,
+    )
+
+    plt.ylim(
+        0,
+        1.05,
     )
 
     plt.grid(
@@ -189,8 +341,6 @@ def plot_replay_histogram(
         width=0.6,
     )
 
-    # Подписываем значение над каждым столбцом.
-
     for bar, value in zip(bars, values):
         plt.text(
             bar.get_x()
@@ -221,6 +371,90 @@ def plot_replay_histogram(
         "Среднее распределение точек по областям: "
         f"k={k}, θ={theta}, N={N}, "
         f"replays={replays}",
+        fontsize=15,
+    )
+
+    plt.grid(
+        axis="y",
+        alpha=0.25,
+    )
+
+    plt.tight_layout()
+
+    return figure
+
+
+def plot_cdf_histogram(
+    cdf_area_probabilities,
+    k,
+    theta,
+    N,
+):
+    """
+    Строит вторую гистограмму на основе CDF.
+
+    Высоты столбцов:
+
+        Область 1 = F(x1)
+        Область 2 = F(x2) - F(x1)
+        Область 3 = 1 - F(x2)
+
+    В отличие от replay-гистограммы, здесь используются
+    теоретические вероятности, рассчитанные непосредственно
+    через F(x).
+    """
+
+    figure = plt.figure(
+        figsize=(9, 7)
+    )
+
+    values = [
+        cdf_area_probabilities["orange_probability"],
+        cdf_area_probabilities["blue_probability"],
+        cdf_area_probabilities["green_probability"],
+    ]
+
+    labels = [
+        "Область 1",
+        "Область 2",
+        "Область 3",
+    ]
+
+    bars = plt.bar(
+        labels,
+        values,
+        width=0.6,
+    )
+
+    for bar, value in zip(bars, values):
+        plt.text(
+            bar.get_x()
+            + bar.get_width() / 2,
+            value,
+            f"{value:.4f}",
+            ha="center",
+            va="bottom",
+            fontsize=11,
+        )
+
+    plt.ylim(
+        0,
+        1.05,
+    )
+
+    plt.ylabel(
+        "Теоретическая вероятность",
+        fontsize=13,
+    )
+
+    plt.xlabel(
+        "Область",
+        fontsize=13,
+    )
+
+    plt.title(
+        "Теоретическое распределение по областям "
+        f"через F(x): k={k}, θ={theta}, N={N}",
         fontsize=15,
     )
 

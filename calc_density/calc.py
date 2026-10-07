@@ -218,6 +218,121 @@ def calculate_areas(
     }
 
 
+def calculate_cdf_area_probabilities(
+    k,
+    theta,
+    x,
+    areas,
+):
+    """
+    Рассчитывает теоретические вероятности трёх областей
+    через функцию распределения F(x) исходного Gamma(k, theta).
+
+    x1 = правая граница оранжевой области.
+    x2 = левая граница зелёной области.
+
+    Тогда:
+
+        P1 = F(x1)
+        P2 = F(x2) - F(x1)
+        P3 = 1 - F(x2)
+
+    Эти значения являются теоретическими долями элементов
+    в трёх областях.
+    """
+
+    if k <= 0:
+        raise ValueError("k должно быть > 0")
+
+    if theta <= 0:
+        raise ValueError("theta должно быть > 0")
+
+    if len(x) == 0:
+        raise ValueError("x не должен быть пустым")
+
+    orange_boundary = x[
+        areas["orange"]["right"]
+    ]
+
+    green_boundary = x[
+        areas["green"]["left"]
+    ]
+
+    if orange_boundary >= green_boundary:
+        raise ValueError(
+            "Граница оранжевой области должна быть меньше "
+            "границы зелёной области"
+        )
+
+    cdf_orange = gamma.cdf(
+        orange_boundary,
+        a=k,
+        scale=theta,
+    )
+
+    cdf_green = gamma.cdf(
+        green_boundary,
+        a=k,
+        scale=theta,
+    )
+
+    orange_probability = cdf_orange
+
+    blue_probability = (
+        cdf_green
+        - cdf_orange
+    )
+
+    green_probability = (
+        1.0
+        - cdf_green
+    )
+
+    probability_sum = (
+        orange_probability
+        + blue_probability
+        + green_probability
+    )
+
+    if not np.isclose(
+        probability_sum,
+        1.0,
+        atol=1e-12,
+    ):
+        raise RuntimeError(
+            "Теоретические вероятности через F(x) "
+            "не дают сумму 1."
+        )
+
+    cdf_values = gamma.cdf(
+        x,
+        a=k,
+        scale=theta,
+    )
+
+    return {
+        "orange_boundary": float(
+            orange_boundary
+        ),
+        "green_boundary": float(
+            green_boundary
+        ),
+        "cdf_orange": float(cdf_orange),
+        "cdf_green": float(cdf_green),
+        "cdf_values": cdf_values,
+        "orange_probability": float(
+            orange_probability
+        ),
+        "blue_probability": float(
+            blue_probability
+        ),
+        "green_probability": float(
+            green_probability
+        ),
+        "total": float(probability_sum),
+    }
+
+
 def generate_sample(k, theta, N, rng):
     """
     Генерирует одну выборку из N элементов Gamma(k, theta).
