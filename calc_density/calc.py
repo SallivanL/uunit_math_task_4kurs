@@ -333,6 +333,53 @@ def calculate_cdf_area_probabilities(
     }
 
 
+
+def calculate_equal_cdf_areas(k, theta, x):
+    """Границы метода 2: деление диапазона CDF на три равные части."""
+    if k <= 0:
+        raise ValueError("k должно быть > 0")
+    if theta <= 0:
+        raise ValueError("theta должно быть > 0")
+    if len(x) == 0:
+        raise ValueError("x не должен быть пустым")
+
+    from scipy.stats import gamma
+
+    levels = (1.0 / 3.0, 2.0 / 3.0)
+    x1, x2 = gamma.ppf(levels, a=k, scale=theta)
+    cdf_values = gamma.cdf(x, a=k, scale=theta)
+    probabilities = {
+        "orange_probability": float(levels[0]),
+        "blue_probability": float(levels[1] - levels[0]),
+        "green_probability": float(1.0 - levels[1]),
+        "total": 1.0,
+    }
+    return {
+        "orange_boundary": float(x1),
+        "green_boundary": float(x2),
+        "cdf_orange": float(levels[0]),
+        "cdf_green": float(levels[1]),
+        "cdf_values": cdf_values,
+        **probabilities,
+    }
+
+
+def calculate_method2_replay_totals(replay_results):
+    """Суммарные фактические количества точек для метода 2."""
+    if not replay_results:
+        raise ValueError("replay_results не должен быть пустым")
+    keys = ("method2_orange_count", "method2_blue_count", "method2_green_count")
+    counts = [sum(int(r[key]) for r in replay_results) for key in keys]
+    total = sum(int(r["total"]) for r in replay_results)
+    if sum(counts) != total:
+        raise RuntimeError("Сумма областей метода 2 не равна общему количеству элементов.")
+    return {
+        "orange_count": counts[0], "blue_count": counts[1], "green_count": counts[2],
+        "orange_ratio": counts[0] / total, "blue_ratio": counts[1] / total,
+        "green_ratio": counts[2] / total, "total": total,
+    }
+
+
 def generate_sample(k, theta, N, rng):
     """
     Генерирует одну выборку из N элементов Gamma(k, theta).
@@ -449,9 +496,10 @@ def run_replays(
     x,
     areas,
     rng,
+    equal_cdf_areas=None,
 ):
     """
-    Выполняет replays независимых экспериментов.
+    Выполняет replay; оба метода используют одну и ту же выборку.
     """
 
     if replays <= 0:
@@ -473,11 +521,24 @@ def run_replays(
             areas=areas,
         )
 
+        method2_counts = {}
+        if equal_cdf_areas is not None:
+            b1 = equal_cdf_areas["orange_boundary"]
+            b2 = equal_cdf_areas["green_boundary"]
+            method2_counts = {
+                "method2_orange_count": int(np.sum(sample <= b1)),
+                "method2_blue_count": int(np.sum((sample > b1) & (sample < b2))),
+                "method2_green_count": int(np.sum(sample >= b2)),
+            }
+            if sum(method2_counts.values()) != len(sample):
+                raise RuntimeError("Метод 2 не классифицировал все элементы выборки.")
+
         results.append({
             "replay": replay,
             "orange_count": statistics["orange"]["count"],
             "blue_count": statistics["blue"]["count"],
             "green_count": statistics["green"]["count"],
+            **method2_counts,
             "total": statistics["total"],
         })
 

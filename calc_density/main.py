@@ -1,12 +1,11 @@
-import os
-import shutil
-
 import numpy as np
 
 from calc import (
     calculate_densities,
     calculate_areas,
     calculate_cdf_area_probabilities,
+    calculate_equal_cdf_areas,
+    calculate_method2_replay_totals,
     run_replays,
     calculate_replay_totals,
     calculate_area_statistics,
@@ -18,10 +17,14 @@ from plotting import (
     plot_three_densities,
     plot_cdf,
     plot_replay_histogram,
+    plot_replays_histogram,
+    plot_method2_replays_histogram,
     plot_cdf_histogram,
+    plot_equal_cdf,
+    plot_equal_cdf_histogram,
 )
 
-from report import save_experiment
+from report import clear_results, save_experiment
 
 
 def main():
@@ -39,8 +42,7 @@ def main():
 
     random_seed = None
 
-    if os.path.exists("results"):
-        shutil.rmtree("results")
+    clear_results()
 
     rng = np.random.default_rng(random_seed)
 
@@ -125,7 +127,23 @@ def main():
                 )
 
                 # --------------------------------------------------
-                # Проведение replay
+                # Метод 2: равное деление диапазона F(x) на три части
+                # --------------------------------------------------
+
+                equal_cdf_areas = calculate_equal_cdf_areas(
+                    k=k, theta=theta, x=x,
+                )
+                equal_cdf_figure = plot_equal_cdf(
+                    x=x, equal_cdf_areas=equal_cdf_areas,
+                    k=k, theta=theta, N=N,
+                )
+                equal_cdf_histogram = plot_equal_cdf_histogram(
+                    equal_cdf_areas=equal_cdf_areas,
+                    k=k, theta=theta, N=N,
+                )
+
+                # --------------------------------------------------
+                # Проведение replay: оба метода используют одни выборки
                 # --------------------------------------------------
 
                 replay_results = run_replays(
@@ -136,6 +154,7 @@ def main():
                     x=x,
                     areas=areas,
                     rng=rng,
+                    equal_cdf_areas=equal_cdf_areas,
                 )
 
                 # --------------------------------------------------
@@ -143,6 +162,9 @@ def main():
                 # --------------------------------------------------
 
                 replay_totals = calculate_replay_totals(
+                    replay_results
+                )
+                method2_replay_totals = calculate_method2_replay_totals(
                     replay_results
                 )
 
@@ -190,6 +212,25 @@ def main():
                 )
 
                 # --------------------------------------------------
+                # Один рисунок со всеми replay-гистограммами
+                # --------------------------------------------------
+
+                replay_histogram = plot_replays_histogram(
+                    replay_results=replay_results,
+                    N=N,
+                    k=k,
+                    theta=theta,
+                )
+
+                # Единый рисунок со всеми replay-гистограммами метода 2
+                method2_replay_histogram = plot_method2_replays_histogram(
+                    replay_results=replay_results,
+                    N=N,
+                    k=k,
+                    theta=theta,
+                )
+
+                # --------------------------------------------------
                 # Сохранение результатов
                 # --------------------------------------------------
 
@@ -204,7 +245,13 @@ def main():
                     figure=figure,
                     cdf_figure=cdf_figure,
                     histogram=histogram,
+                    replay_histogram=replay_histogram,
+                    method2_replay_histogram=method2_replay_histogram,
                     cdf_histogram=cdf_histogram,
+                    equal_cdf_figure=equal_cdf_figure,
+                    equal_cdf_histogram=equal_cdf_histogram,
+                    equal_cdf_areas=equal_cdf_areas,
+                    method2_replay_totals=method2_replay_totals,
                     replay_results=replay_results,
                     replay_ratios=replay_ratios,
                     average_replay_ratios=average_replay_ratios,

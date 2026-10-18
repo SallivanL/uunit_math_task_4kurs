@@ -1,8 +1,16 @@
 import csv
 import os
+import shutil
+import matplotlib.pyplot as plt
 
 
 RESULTS_DIR = "results"
+
+
+def clear_results():
+    """Удаляет предыдущие результаты экспериментов перед новым запуском."""
+    if os.path.exists(RESULTS_DIR):
+        shutil.rmtree(RESULTS_DIR)
 
 
 def get_experiment_dir(k, N):
@@ -39,7 +47,13 @@ def save_experiment(
     figure,
     cdf_figure,
     histogram,
+    replay_histogram,
+    method2_replay_histogram,
     cdf_histogram,
+    equal_cdf_figure,
+    equal_cdf_histogram,
+    equal_cdf_areas,
+    method2_replay_totals,
     replay_results,
     replay_ratios,
     average_replay_ratios,
@@ -88,6 +102,31 @@ def save_experiment(
         N=N,
     )
 
+    save_replay_histogram(
+        figure=replay_histogram,
+        output_dir=output_dir,
+        k=k,
+        theta=theta,
+        N=N,
+    )
+
+    save_method2_replay_histogram(
+        figure=method2_replay_histogram,
+        output_dir=output_dir,
+        k=k,
+        theta=theta,
+        N=N,
+    )
+
+    save_equal_cdf_graph(
+        figure=equal_cdf_figure, output_dir=output_dir,
+        k=k, theta=theta, N=N,
+    )
+    save_equal_cdf_histogram(
+        figure=equal_cdf_histogram, output_dir=output_dir,
+        k=k, theta=theta, N=N,
+    )
+
     save_replays(
         replay_results=replay_results,
         output_dir=output_dir,
@@ -110,6 +149,8 @@ def save_experiment(
         replay_totals=replay_totals,
         area_statistics=area_statistics,
         cdf_area_probabilities=cdf_area_probabilities,
+        equal_cdf_areas=equal_cdf_areas,
+        method2_replay_totals=method2_replay_totals,
         output_dir=output_dir,
     )
 
@@ -127,7 +168,7 @@ def save_graph(
 
     graph_file = os.path.join(
         output_dir,
-        f"distribution_"
+        f"initial_graphs_"
         f"k_{k}_"
         f"theta_{theta}_"
         f"N_{N}.png",
@@ -138,7 +179,7 @@ def save_graph(
         dpi=150,
     )
 
-    figure.clf()
+    plt.close(figure)
 
 
 def save_cdf_graph(
@@ -154,7 +195,7 @@ def save_cdf_graph(
 
     cdf_file = os.path.join(
         output_dir,
-        f"cdf_"
+        f"method_1_cdf_"
         f"k_{k}_"
         f"theta_{theta}_"
         f"N_{N}.png",
@@ -165,7 +206,7 @@ def save_cdf_graph(
         dpi=150,
     )
 
-    figure.clf()
+    plt.close(figure)
 
 
 def save_histogram(
@@ -182,7 +223,7 @@ def save_histogram(
 
     histogram_file = os.path.join(
         output_dir,
-        f"histogram_"
+        f"initial_histogram_"
         f"k_{k}_"
         f"theta_{theta}_"
         f"N_{N}.png",
@@ -193,7 +234,7 @@ def save_histogram(
         dpi=150,
     )
 
-    figure.clf()
+    plt.close(figure)
 
 
 def save_cdf_histogram(
@@ -210,7 +251,7 @@ def save_cdf_histogram(
 
     histogram_file = os.path.join(
         output_dir,
-        f"cdf_histogram_"
+        f"method_1_theoretical_probabilities_"
         f"k_{k}_"
         f"theta_{theta}_"
         f"N_{N}.png",
@@ -221,7 +262,40 @@ def save_cdf_histogram(
         dpi=150,
     )
 
-    figure.clf()
+    plt.close(figure)
+
+
+
+def save_replay_histogram(figure, output_dir, k, theta, N):
+    """Сохраняет единый рисунок со всеми replay-гистограммами."""
+    filename = os.path.join(
+        output_dir,
+        f"method_1_replay_histograms_k_{k}_theta_{theta}_N_{N}.png",
+    )
+    figure.savefig(filename, dpi=150)
+    plt.close(figure)
+
+
+def save_method2_replay_histogram(figure, output_dir, k, theta, N):
+    """Сохраняет единый рисунок со всеми replay-гистограммами метода 2."""
+    filename = os.path.join(
+        output_dir,
+        f"method_2_replay_histograms_k_{k}_theta_{theta}_N_{N}.png",
+    )
+    figure.savefig(filename, dpi=150)
+    plt.close(figure)
+
+
+def save_equal_cdf_graph(figure, output_dir, k, theta, N):
+    filename = os.path.join(output_dir, f"method_2_cdf_k_{k}_theta_{theta}_N_{N}.png")
+    figure.savefig(filename, dpi=150)
+    plt.close(figure)
+
+
+def save_equal_cdf_histogram(figure, output_dir, k, theta, N):
+    filename = os.path.join(output_dir, f"method_2_theoretical_probabilities_k_{k}_theta_{theta}_N_{N}.png")
+    figure.savefig(filename, dpi=150)
+    plt.close(figure)
 
 
 def save_replays(
@@ -257,6 +331,9 @@ def save_replays(
             "orange_count",
             "blue_count",
             "green_count",
+            "method2_orange_count",
+            "method2_blue_count",
+            "method2_green_count",
             "total",
         ])
 
@@ -266,6 +343,9 @@ def save_replays(
                 result["orange_count"],
                 result["blue_count"],
                 result["green_count"],
+                result.get("method2_orange_count", ""),
+                result.get("method2_blue_count", ""),
+                result.get("method2_green_count", ""),
                 result["total"],
             ])
 
@@ -284,6 +364,8 @@ def save_report(
     replay_totals,
     area_statistics,
     cdf_area_probabilities,
+    equal_cdf_areas,
+    method2_replay_totals,
     output_dir,
 ):
     """
@@ -405,6 +487,26 @@ def save_report(
             f"| **Сумма** | | "
             f"**{cdf_area_probabilities['total']:.6f}** |"
         ),
+        "",
+        "## Сравнение методов: теоретическое и фактическое количество точек",
+        "",
+        "Теоретическое количество точек рассчитано как вероятность области, умноженная на `N` для одного replay. Для второго метода границы соответствуют уровням `F(x)=1/3` и `F(x)=2/3`.",
+        "",
+        "| Область | Метод 1: вероятность | Метод 1: теоретическое кол-во (N·P) | Метод 2: вероятность | Метод 2: теоретическое кол-во (N·P) |",
+        "|---|---:|---:|---:|---:|",
+        f"| 1 | {cdf_area_probabilities['orange_probability']:.6f} | {N * cdf_area_probabilities['orange_probability']:.6f} | {equal_cdf_areas['orange_probability']:.6f} | {N * equal_cdf_areas['orange_probability']:.6f} |",
+        f"| 2 | {cdf_area_probabilities['blue_probability']:.6f} | {N * cdf_area_probabilities['blue_probability']:.6f} | {equal_cdf_areas['blue_probability']:.6f} | {N * equal_cdf_areas['blue_probability']:.6f} |",
+        f"| 3 | {cdf_area_probabilities['green_probability']:.6f} | {N * cdf_area_probabilities['green_probability']:.6f} | {equal_cdf_areas['green_probability']:.6f} | {N * equal_cdf_areas['green_probability']:.6f} |",
+        f"| **Всего** | **{cdf_area_probabilities['total']:.6f}** | **{N:.6f}** | **{equal_cdf_areas['total']:.6f}** | **{N:.6f}** |",
+        "",
+        f"Фактическое количество точек суммарно по {replays} replay (всего {N * replays} элементов):",
+        "",
+        "| Область | Метод 1: фактическое кол-во | Метод 2: фактическое кол-во |",
+        "|---|---:|---:|",
+        f"| 1 | {replay_totals['orange_count']} | {method2_replay_totals['orange_count']} |",
+        f"| 2 | {replay_totals['blue_count']} | {method2_replay_totals['blue_count']} |",
+        f"| 3 | {replay_totals['green_count']} | {method2_replay_totals['green_count']} |",
+        f"| **Всего** | **{replay_totals['total']}** | **{method2_replay_totals['total']}** |",
         "",
         "## Итог по всем replay",
         "",

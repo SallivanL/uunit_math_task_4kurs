@@ -384,6 +384,77 @@ def plot_replay_histogram(
     return figure
 
 
+def plot_replays_histogram(replay_results, N, k, theta):
+    """Строит один рисунок со столбцами всех replay.
+
+    Для каждого replay отображаются три столбца: оранжевая, синяя
+    и зелёная области. Высота каждого столбца равна count / N,
+    а подпись показывает фактическое количество точек.
+    Функция только строит и возвращает figure, не сохраняет файлы.
+    """
+    if N <= 0:
+        raise ValueError("N должно быть > 0")
+    if not replay_results:
+        raise ValueError("Список replay_results пуст")
+
+    replay_numbers = [int(result["replay"]) for result in replay_results]
+    orange = [int(result["orange_count"]) for result in replay_results]
+    blue = [int(result["blue_count"]) for result in replay_results]
+    green = [int(result["green_count"]) for result in replay_results]
+
+    for replay_number, counts in zip(replay_numbers, zip(orange, blue, green)):
+        if sum(counts) != N:
+            raise ValueError(
+                f"Сумма точек replay {replay_number} не равна N: "
+                f"{sum(counts)} != {N}"
+            )
+
+    import numpy as np
+
+    x = np.arange(len(replay_results))
+    width = 0.24
+    series = [
+        (orange, "Оранжевая", "#E99A37", -width),
+        (blue, "Синяя", "#438BD0", 0),
+        (green, "Зелёная", "#42966D", width),
+    ]
+
+    figure_width = max(11, len(replay_results) * 1.1)
+    figure, ax = plt.subplots(figsize=(figure_width, 7))
+
+    for counts, label, color, offset in series:
+        ratios = [count / N for count in counts]
+        bars = ax.bar(x + offset, ratios, width=width, label=label, color=color)
+        for bar, count, ratio in zip(bars, counts, ratios):
+            y = ratio / 2 if ratio > 0 else 0.012
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                y,
+                str(count),
+                ha="center",
+                va="center" if ratio > 0 else "bottom",
+                fontsize=9,
+                fontweight="bold",
+                color="white" if ratio >= 0.12 else "black",
+            )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([str(number) for number in replay_numbers])
+    ax.set_ylim(0, 1.08)
+    ax.set_xlabel("Номер replay", fontsize=13)
+    ax.set_ylabel("Доля точек n / N", fontsize=13)
+    ax.set_title(
+        f"Распределение точек по областям для всех replay: "
+        f"k={k}, θ={theta}, N={N}",
+        fontsize=14,
+    )
+    ax.legend(title="Область")
+    ax.grid(axis="y", alpha=0.25)
+    ax.set_axisbelow(True)
+    figure.tight_layout()
+    return figure
+
+
 def plot_cdf_histogram(
     cdf_area_probabilities,
     k,
@@ -465,4 +536,114 @@ def plot_cdf_histogram(
 
     plt.tight_layout()
 
+    return figure
+
+
+def plot_equal_cdf(x, equal_cdf_areas, k, theta, N):
+    """CDF с границами метода 2: F(x)=1/3 и F(x)=2/3."""
+    figure = plt.figure(figsize=(11, 7))
+    x1 = equal_cdf_areas["orange_boundary"]
+    x2 = equal_cdf_areas["green_boundary"]
+    y1 = equal_cdf_areas["cdf_orange"]
+    y2 = equal_cdf_areas["cdf_green"]
+    plt.plot(x, equal_cdf_areas["cdf_values"], linewidth=2,
+             label=r"$F(x)$ — функция распределения")
+    plt.scatter([x1, x2], [y1, y2], s=55, zorder=5,
+                label="Границы равных областей по F(x)")
+    for boundary, level in ((x1, y1), (x2, y2)):
+        plt.vlines(boundary, 0, level, linestyles="--", linewidth=1.5)
+        plt.hlines(level, 0, boundary, linestyles="--", linewidth=1.5)
+    plt.annotate(f"F(x₁) = {y1:.4f}", xy=(x1, y1), xytext=(10, 10),
+                 textcoords="offset points", fontsize=11)
+    plt.annotate(f"F(x₂) = {y2:.4f}", xy=(x2, y2), xytext=(10, -25),
+                 textcoords="offset points", fontsize=11)
+    plt.annotate(f"x₁ = {x1:.4f}", xy=(x1, 0), xytext=(5, 8),
+                 textcoords="offset points", fontsize=10)
+    plt.annotate(f"x₂ = {x2:.4f}", xy=(x2, 0), xytext=(5, 8),
+                 textcoords="offset points", fontsize=10)
+    plt.title(f"CDF: три равные области по F(x): k={k}, θ={theta}, N={N}", fontsize=15)
+    plt.xlabel("x", fontsize=13)
+    plt.ylabel("F(x)", fontsize=13)
+    plt.ylim(0, 1.05)
+    plt.grid(True, alpha=0.25)
+    plt.legend(fontsize=11)
+    plt.tight_layout()
+    return figure
+
+
+def plot_equal_cdf_histogram(equal_cdf_areas, k, theta, N):
+    """Теоретическая гистограмма вероятностей метода 2."""
+    figure = plt.figure(figsize=(9, 7))
+    values = [equal_cdf_areas["orange_probability"],
+              equal_cdf_areas["blue_probability"],
+              equal_cdf_areas["green_probability"]]
+    labels = ["Область 1", "Область 2", "Область 3"]
+    bars = plt.bar(labels, values, width=0.6)
+    for bar, value in zip(bars, values):
+        plt.text(bar.get_x() + bar.get_width() / 2, value, f"{value:.4f}",
+                 ha="center", va="bottom", fontsize=11)
+    plt.ylim(0, 1.05)
+    plt.ylabel("Теоретическая вероятность", fontsize=13)
+    plt.xlabel("Область", fontsize=13)
+    plt.title(f"Теоретические вероятности метода 2: k={k}, θ={theta}, N={N}", fontsize=15)
+    plt.grid(axis="y", alpha=0.25)
+    plt.tight_layout()
+    return figure
+
+
+def plot_method2_replays_histogram(replay_results, N, k, theta):
+    """Строит единый рисунок с гистограммами всех replay для метода 2."""
+    if N <= 0:
+        raise ValueError("N должно быть > 0")
+    if not replay_results:
+        raise ValueError("Список replay_results пуст")
+
+    replay_numbers = [int(result["replay"]) for result in replay_results]
+    keys = ("method2_orange_count", "method2_blue_count", "method2_green_count")
+    labels = ("Оранжевая", "Синяя", "Зелёная")
+    colors = ("#E99A37", "#438BD0", "#42966D")
+    counts_by_area = [[int(result[key]) for result in replay_results] for key in keys]
+
+    for number, result, counts in zip(replay_numbers, replay_results, zip(*counts_by_area)):
+        if any(key not in result for key in keys):
+            raise ValueError("В replay_results отсутствуют счётчики метода 2")
+        if sum(counts) != N:
+            raise ValueError(
+                f"Сумма точек метода 2 для replay {number} не равна N: "
+                f"{sum(counts)} != {N}"
+            )
+
+    import numpy as np
+    x = np.arange(len(replay_results))
+    width = 0.24
+    figure, ax = plt.subplots(figsize=(max(11, len(replay_results) * 1.1), 7))
+
+    for counts, label, color, offset in zip(
+        counts_by_area, labels, colors, (-width, 0, width)
+    ):
+        ratios = [count / N for count in counts]
+        bars = ax.bar(x + offset, ratios, width=width, label=label, color=color)
+        for bar, count, ratio in zip(bars, counts, ratios):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                ratio / 2 if ratio > 0 else 0.012,
+                str(count), ha="center",
+                va="center" if ratio > 0 else "bottom",
+                fontsize=9, fontweight="bold",
+                color="white" if ratio >= 0.12 else "black",
+            )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([str(number) for number in replay_numbers])
+    ax.set_ylim(0, 1.08)
+    ax.set_xlabel("Номер replay", fontsize=13)
+    ax.set_ylabel("Доля точек n / N", fontsize=13)
+    ax.set_title(
+        f"Метод 2: распределение точек по областям для всех replay: "
+        f"k={k}, θ={theta}, N={N}", fontsize=14,
+    )
+    ax.legend(title="Область")
+    ax.grid(axis="y", alpha=0.25)
+    ax.set_axisbelow(True)
+    figure.tight_layout()
     return figure
