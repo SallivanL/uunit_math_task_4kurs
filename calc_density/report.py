@@ -1,4 +1,5 @@
 import csv
+import math
 import os
 import shutil
 import matplotlib.pyplot as plt
@@ -54,6 +55,8 @@ def save_experiment(
     equal_cdf_histogram,
     equal_cdf_areas,
     method2_replay_totals,
+    method1_chi_squared,
+    method2_chi_squared,
     replay_results,
     replay_ratios,
     average_replay_ratios,
@@ -135,22 +138,22 @@ def save_experiment(
         N=N,
     )
 
+    save_chi_squared_comparison(
+        method1_chi_squared=method1_chi_squared,
+        method2_chi_squared=method2_chi_squared,
+        output_dir=output_dir,
+        k=k,
+        theta=theta,
+        N=N,
+    )
+
     save_report(
         k=k,
         theta=theta,
         N=N,
-        m=m,
         replays=replays,
-        x=x,
-        areas=areas,
-        replay_results=replay_results,
-        replay_ratios=replay_ratios,
-        average_replay_ratios=average_replay_ratios,
-        replay_totals=replay_totals,
-        area_statistics=area_statistics,
-        cdf_area_probabilities=cdf_area_probabilities,
-        equal_cdf_areas=equal_cdf_areas,
-        method2_replay_totals=method2_replay_totals,
+        method1_chi_squared=method1_chi_squared,
+        method2_chi_squared=method2_chi_squared,
         output_dir=output_dir,
     )
 
@@ -350,343 +353,162 @@ def save_replays(
             ])
 
 
+def save_chi_squared_comparison(
+    method1_chi_squared,
+    method2_chi_squared,
+    output_dir,
+    k,
+    theta,
+    N,
+):
+    """Сохраняет построчную детализацию расчёта chi² для двух методов."""
+    filename = os.path.join(
+        output_dir,
+        f"chi_squared_comparison_k_{k}_theta_{theta}_N_{N}.csv",
+    )
+    area_labels = {
+        "orange": "Оранжевая",
+        "blue": "Синяя",
+        "green": "Зелёная",
+    }
+    methods = (
+        ("Метод 1", method1_chi_squared),
+        ("Метод 2", method2_chi_squared),
+    )
+
+    with open(filename, "w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow([
+            "method",
+            "area",
+            "theoretical_probability_p",
+            "empirical_probability_p_hat",
+            "observed_count",
+            "total_count",
+            "chi_squared_contribution",
+            "count_difference_observed_minus_theoretical",
+            "relative_deviation_percent",
+            "chi_squared_total",
+        ])
+        for method_name, result in methods:
+            for area_name in ("orange", "blue", "green"):
+                area = result["areas"][area_name]
+                theoretical_probability = area["theoretical_probability"]
+                empirical_probability = area["empirical_probability"]
+                deviation_percent = (
+                    (empirical_probability - theoretical_probability)
+                    / theoretical_probability
+                    * 100
+                    if theoretical_probability > 0
+                    else None
+                )
+                writer.writerow([
+                    method_name,
+                    area_labels[area_name],
+                    f"{theoretical_probability:.12g}",
+                    f"{empirical_probability:.12g}",
+                    area["observed_count"],
+                    area["total_count"],
+                    f"{area['contribution']:.12g}",
+                    math.ceil(area["observed_count"] - theoretical_probability * area["total_count"]),
+                    f"{deviation_percent:.12g}" if deviation_percent is not None else "",
+                    f"{result['chi_squared']:.12g}",
+                ])
+
+
 def save_report(
     k,
     theta,
     N,
-    m,
     replays,
-    x,
-    areas,
-    replay_results,
-    replay_ratios,
-    average_replay_ratios,
-    replay_totals,
-    area_statistics,
-    cdf_area_probabilities,
-    equal_cdf_areas,
-    method2_replay_totals,
+    method1_chi_squared,
+    method2_chi_squared,
     output_dir,
 ):
-    """
-    Сохраняет полный Markdown-отчёт.
-    """
-
+    """Сохраняет краткий Markdown-отчёт только с двумя сравнениями."""
     report_file = os.path.join(
         output_dir,
-        f"report_"
-        f"k_{k}_"
-        f"theta_{theta}_"
-        f"N_{N}.md",
+        f"report_k_{k}_theta_{theta}_N_{N}.md",
     )
 
-    orange_boundary = x[
-        areas["orange"]["right"]
-    ]
-
-    green_boundary = x[
-        areas["green"]["left"]
-    ]
+    methods = (
+        ("Метод 1", method1_chi_squared),
+        ("Метод 2", method2_chi_squared),
+    )
+    area_labels = {
+        "orange": "Оранжевая",
+        "blue": "Синяя",
+        "green": "Зелёная",
+    }
+    area_order = ("orange", "blue", "green")
 
     lines = [
-        "# Результаты расчёта",
+        "# Результаты эксперимента",
         "",
-        f"- `k = {k}`",
-        f"- `theta = {theta}`",
-        f"- `N = {N}`",
-        f"- `m = {m}`",
-        f"- `replays = {replays}`",
+        f"`k = {k}`, `θ = {theta}`, `N = {N}`, `replays = {replays}`",
         "",
-        "## Границы закрашенных областей",
+        "## 1. Результаты χ²",
         "",
-        (
-            "Оранжевая область определяется по распределению "
-            f"минимума `f_min(x)` и содержит {m:.0%} его площади."
-        ),
+        "Формула: `χ² = Σ ((p_j - p̂_j) / p_j)²`, где `p_j` — теоретическая вероятность, `p̂_j` — экспериментальная вероятность.",
         "",
-        (
-            "Зелёная область определяется по распределению "
-            f"максимума `f_max(x)` и содержит {m:.0%} его площади."
-        ),
-        "",
-        (
-            "Синяя область — весь промежуток между правой "
-            "границей оранжевой области и левой границей "
-            "зелёной области. Она строится по исходному "
-            "распределению `f(x)`."
-        ),
-        "",
-        "| Область | Интервал |",
-        "|---|---|",
-        (
-            f"| Оранжевая | "
-            f"`x <= {orange_boundary:.12f}` |"
-        ),
-        (
-            f"| Синяя | "
-            f"`{orange_boundary:.12f} < x < "
-            f"{green_boundary:.12f}` |"
-        ),
-        (
-            f"| Зелёная | "
-            f"`x >= {green_boundary:.12f}` |"
-        ),
-        "",
-        "## Расчёт через функцию распределения F(x)",
-        "",
-        (
-            "Те же две границы областей переносятся на функцию "
-            "распределения исходного Gamma-распределения."
-        ),
-        "",
-        "| Параметр | Значение |",
-        "|---|---:|",
-        (
-            f"| Граница x₁ | "
-            f"{cdf_area_probabilities['orange_boundary']:.12f} |"
-        ),
-        (
-            f"| F(x₁) | "
-            f"{cdf_area_probabilities['cdf_orange']:.12f} |"
-        ),
-        (
-            f"| Граница x₂ | "
-            f"{cdf_area_probabilities['green_boundary']:.12f} |"
-        ),
-        (
-            f"| F(x₂) | "
-            f"{cdf_area_probabilities['cdf_green']:.12f} |"
-        ),
-        "",
-        "### Теоретические вероятности областей",
-        "",
-        (
-            "Вероятности получаются как приращения функции "
-            "распределения:"
-        ),
-        "",
-        "- `P(Область 1) = F(x₁)`",
-        "- `P(Область 2) = F(x₂) - F(x₁)`",
-        "- `P(Область 3) = 1 - F(x₂)`",
-        "",
-        "| Область | Формула | Теоретическая вероятность |",
-        "|---|---|---:|",
-        (
-            f"| Область 1 | `F(x₁)` | "
-            f"{cdf_area_probabilities['orange_probability']:.6f} |"
-        ),
-        (
-            f"| Область 2 | `F(x₂) - F(x₁)` | "
-            f"{cdf_area_probabilities['blue_probability']:.6f} |"
-        ),
-        (
-            f"| Область 3 | `1 - F(x₂)` | "
-            f"{cdf_area_probabilities['green_probability']:.6f} |"
-        ),
-        (
-            f"| **Сумма** | | "
-            f"**{cdf_area_probabilities['total']:.6f}** |"
-        ),
-        "",
-        "## Сравнение методов: теоретическое и фактическое количество точек",
-        "",
-        "Теоретическое количество точек рассчитано как вероятность области, умноженная на `N` для одного replay. Для второго метода границы соответствуют уровням `F(x)=1/3` и `F(x)=2/3`.",
-        "",
-        "| Область | Метод 1: вероятность | Метод 1: теоретическое кол-во (N·P) | Метод 2: вероятность | Метод 2: теоретическое кол-во (N·P) |",
-        "|---|---:|---:|---:|---:|",
-        f"| 1 | {cdf_area_probabilities['orange_probability']:.6f} | {N * cdf_area_probabilities['orange_probability']:.6f} | {equal_cdf_areas['orange_probability']:.6f} | {N * equal_cdf_areas['orange_probability']:.6f} |",
-        f"| 2 | {cdf_area_probabilities['blue_probability']:.6f} | {N * cdf_area_probabilities['blue_probability']:.6f} | {equal_cdf_areas['blue_probability']:.6f} | {N * equal_cdf_areas['blue_probability']:.6f} |",
-        f"| 3 | {cdf_area_probabilities['green_probability']:.6f} | {N * cdf_area_probabilities['green_probability']:.6f} | {equal_cdf_areas['green_probability']:.6f} | {N * equal_cdf_areas['green_probability']:.6f} |",
-        f"| **Всего** | **{cdf_area_probabilities['total']:.6f}** | **{N:.6f}** | **{equal_cdf_areas['total']:.6f}** | **{N:.6f}** |",
-        "",
-        f"Фактическое количество точек суммарно по {replays} replay (всего {N * replays} элементов):",
-        "",
-        "| Область | Метод 1: фактическое кол-во | Метод 2: фактическое кол-во |",
-        "|---|---:|---:|",
-        f"| 1 | {replay_totals['orange_count']} | {method2_replay_totals['orange_count']} |",
-        f"| 2 | {replay_totals['blue_count']} | {method2_replay_totals['blue_count']} |",
-        f"| 3 | {replay_totals['green_count']} | {method2_replay_totals['green_count']} |",
-        f"| **Всего** | **{replay_totals['total']}** | **{method2_replay_totals['total']}** |",
-        "",
-        "## Итог по всем replay",
-        "",
-        "| Область | Элементов | Доля |",
-        "|---|---:|---:|",
-        (
-            f"| Оранжевая | "
-            f"{replay_totals['orange_count']} | "
-            f"{replay_totals['orange_ratio']:.2%} |"
-        ),
-        (
-            f"| Синяя | "
-            f"{replay_totals['blue_count']} | "
-            f"{replay_totals['blue_ratio']:.2%} |"
-        ),
-        (
-            f"| Зелёная | "
-            f"{replay_totals['green_count']} | "
-            f"{replay_totals['green_ratio']:.2%} |"
-        ),
-        (
-            f"| **Всего** | "
-            f"**{replay_totals['total']}** | "
-            f"**100.00%** |"
-        ),
-        "",
-        "## Статистика областей",
-        "",
-        (
-            "Для каждой области рассчитаны: математическое ожидание, "
-            "частота, среднее количество элементов за replay, "
-            "среднее квадратическое отклонение и дисперсия."
-        ),
-        "",
-        (
-            "| Область | Мат. ожидание | Частота | "
-            "Среднее кол-во точек | СКО | Дисперсия |"
-        ),
-        "|---|---:|---:|---:|---:|---:|",
-        (
-            f"| Оранжевая | "
-            f"{area_statistics['orange']['mathematical_expectation']:.6f} | "
-            f"{area_statistics['orange']['frequency']:.2%} | "
-            f"{area_statistics['orange']['mean']:.6f} | "
-            f"{area_statistics['orange']['standard_deviation']:.6f} | "
-            f"{area_statistics['orange']['variance']:.6f} |"
-        ),
-        (
-            f"| Синяя | "
-            f"{area_statistics['blue']['mathematical_expectation']:.6f} | "
-            f"{area_statistics['blue']['frequency']:.2%} | "
-            f"{area_statistics['blue']['mean']:.6f} | "
-            f"{area_statistics['blue']['standard_deviation']:.6f} | "
-            f"{area_statistics['blue']['variance']:.6f} |"
-        ),
-        (
-            f"| Зелёная | "
-            f"{area_statistics['green']['mathematical_expectation']:.6f} | "
-            f"{area_statistics['green']['frequency']:.2%} | "
-            f"{area_statistics['green']['mean']:.6f} | "
-            f"{area_statistics['green']['standard_deviation']:.6f} | "
-            f"{area_statistics['green']['variance']:.6f} |"
-        ),
-        "",
-        "## Средняя доля точек по областям",
-        "",
-        (
-            f"Значения `n / N` усреднены по всем "
-            f"{replays} replay."
-        ),
-        "",
-        (
-            "| Область | Среднее n/N | "
-            "Среднее количество точек |"
-        ),
-        "|---|---:|---:|",
-        (
-            f"| Область 1 | "
-            f"{average_replay_ratios['orange_ratio']:.6f} | "
-            f"{average_replay_ratios['orange_ratio'] * N:.6f} |"
-        ),
-        (
-            f"| Область 2 | "
-            f"{average_replay_ratios['blue_ratio']:.6f} | "
-            f"{average_replay_ratios['blue_ratio'] * N:.6f} |"
-        ),
-        (
-            f"| Область 3 | "
-            f"{average_replay_ratios['green_ratio']:.6f} | "
-            f"{average_replay_ratios['green_ratio'] * N:.6f} |"
-        ),
-        (
-            f"| **Сумма** | "
-            f"**{average_replay_ratios['total']:.6f}** | "
-            f"**{average_replay_ratios['total'] * N:.6f}** |"
-        ),
-        "",
-        "## Сравнение replay и расчёта через F(x)",
-        "",
-        (
-            "В таблице сопоставлены экспериментальные средние доли "
-            "и теоретические вероятности, полученные через F(x)."
-        ),
-        "",
-        "| Область | Среднее replay n/N | Теоретическая вероятность F(x) | Разница |",
-        "|---|---:|---:|---:|",
-        (
-            f"| Область 1 | "
-            f"{average_replay_ratios['orange_ratio']:.6f} | "
-            f"{cdf_area_probabilities['orange_probability']:.6f} | "
-            f"{average_replay_ratios['orange_ratio'] - cdf_area_probabilities['orange_probability']:+.6f} |"
-        ),
-        (
-            f"| Область 2 | "
-            f"{average_replay_ratios['blue_ratio']:.6f} | "
-            f"{cdf_area_probabilities['blue_probability']:.6f} | "
-            f"{average_replay_ratios['blue_ratio'] - cdf_area_probabilities['blue_probability']:+.6f} |"
-        ),
-        (
-            f"| Область 3 | "
-            f"{average_replay_ratios['green_ratio']:.6f} | "
-            f"{cdf_area_probabilities['green_probability']:.6f} | "
-            f"{average_replay_ratios['green_ratio'] - cdf_area_probabilities['green_probability']:+.6f} |"
-        ),
-        "",
-        "## Доли точек по каждому replay",
-        "",
-        (
-            "Для проверки приведены значения `n / N` "
-            "для каждого replay."
-        ),
-        "",
-        (
-            "| Replay | Область 1 (n1/N) | "
-            "Область 2 (n2/N) | Область 3 (n3/N) | "
-            "Сумма |"
-        ),
-        "|---:|---:|---:|---:|---:|",
+        "| Метод | Область | Теоретическая вероятность p_j | Экспериментальная вероятность p̂_j | Вклад в χ² |",
+        "|---|---|---:|---:|---:|",
     ]
 
-    for ratio in replay_ratios:
-        ratio_sum = (
-            ratio["orange_ratio"]
-            + ratio["blue_ratio"]
-            + ratio["green_ratio"]
-        )
-
+    for method_label, result in methods:
+        for area_name in area_order:
+            area = result["areas"][area_name]
+            lines.append(
+                f"| {method_label} | {area_labels[area_name]} | "
+                f"{area['theoretical_probability']:.8f} | "
+                f"{area['empirical_probability']:.8f} | "
+                f"{area['contribution']:.10f} |"
+            )
         lines.append(
-            f"| {ratio['replay']} | "
-            f"{ratio['orange_ratio']:.6f} | "
-            f"{ratio['blue_ratio']:.6f} | "
-            f"{ratio['green_ratio']:.6f} | "
-            f"{ratio_sum:.6f} |"
+            f"| **{method_label}: итог χ²** | — | — | — | "
+            f"**{result['chi_squared']:.10f}** |"
         )
 
     lines.extend([
         "",
-        "## Статистика каждого replay",
+        "## 2. Сравнение теоретического и фактического количества точек",
         "",
-        (
-            "| Replay | Оранжевая | Синяя | "
-            "Зелёная | Всего |"
-        ),
-        "|---:|---:|---:|---:|---:|",
+        f"Теоретическое количество рассчитано для всех {replays} повторений: `p_j × N × replays`. Фактическое количество — число элементов, попавших в соответствующую область во всех повторениях. Отклонение в процентах: `(факт − теория) / теория × 100%`; знак `+` означает превышение теории, знак `−` — значение ниже теории.",
+        "",
+        "| Метод | Область | Теоретическое количество точек | Фактическое количество точек | Разница (факт − теория), точек | Отклонение от теории, % |",
+        "|---|---|---:|---:|---:|---:|",
     ])
 
-    for replay in replay_results:
+    for method_label, result in methods:
+        total_count = int(result["total_count"])
+        for area_name in area_order:
+            area = result["areas"][area_name]
+            theoretical_count = (
+                area["theoretical_probability"] * total_count
+            )
+            observed_count = area["observed_count"]
+            deviation_percent = (
+                (observed_count - theoretical_count) / theoretical_count * 100
+                if theoretical_count > 0
+                else None
+            )
+            count_difference = math.ceil(observed_count - theoretical_count)
+            deviation_text = (
+                f"{deviation_percent:+.2f}%"
+                if deviation_percent is not None
+                else "н/д"
+            )
+            lines.append(
+                f"| {method_label} | {area_labels[area_name]} | "
+                f"{theoretical_count:.4f} | {observed_count} | "
+                f"{count_difference:+d} | {deviation_text} |"
+            )
         lines.append(
-            f"| {replay['replay']} | "
-            f"{replay['orange_count']} | "
-            f"{replay['blue_count']} | "
-            f"{replay['green_count']} | "
-            f"{replay['total']} |"
+            f"| **{method_label}: всего** | — | **{total_count:.4f}** | "
+            f"**{total_count}** | **+0** | **+0.00%** |"
         )
 
-    with open(
-        report_file,
-        "w",
-        encoding="utf-8",
-    ) as file:
-        file.write(
-            "\n".join(lines)
-        )
+    lines.append("")
+
+    with open(report_file, "w", encoding="utf-8") as file:
+        file.write("\n".join(lines))

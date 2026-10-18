@@ -6,6 +6,7 @@ from calc import (
     calculate_cdf_area_probabilities,
     calculate_equal_cdf_areas,
     calculate_method2_replay_totals,
+    calculate_chi_squared_comparison,
     run_replays,
     calculate_replay_totals,
     calculate_area_statistics,
@@ -38,7 +39,7 @@ def main():
     ]
 
     theta_values = [1]
-    N_values = [10, 100]
+    N_values = [10, 100, 1000]
 
     random_seed = None
 
@@ -169,6 +170,37 @@ def main():
                 )
 
                 # --------------------------------------------------
+                # Сравнение теоретических и экспериментальных
+                # вероятностей по формуле chi² для обоих методов
+                # --------------------------------------------------
+
+                method1_chi_squared = calculate_chi_squared_comparison(
+                    theoretical_probabilities={
+                        "orange": cdf_area_probabilities["orange_probability"],
+                        "blue": cdf_area_probabilities["blue_probability"],
+                        "green": cdf_area_probabilities["green_probability"],
+                    },
+                    observed_counts={
+                        "orange": replay_totals["orange_count"],
+                        "blue": replay_totals["blue_count"],
+                        "green": replay_totals["green_count"],
+                    },
+                )
+
+                method2_chi_squared = calculate_chi_squared_comparison(
+                    theoretical_probabilities={
+                        "orange": equal_cdf_areas["orange_probability"],
+                        "blue": equal_cdf_areas["blue_probability"],
+                        "green": equal_cdf_areas["green_probability"],
+                    },
+                    observed_counts={
+                        "orange": method2_replay_totals["orange_count"],
+                        "blue": method2_replay_totals["blue_count"],
+                        "green": method2_replay_totals["green_count"],
+                    },
+                )
+
+                # --------------------------------------------------
                 # Статистика областей
                 # --------------------------------------------------
 
@@ -252,6 +284,8 @@ def main():
                     equal_cdf_histogram=equal_cdf_histogram,
                     equal_cdf_areas=equal_cdf_areas,
                     method2_replay_totals=method2_replay_totals,
+                    method1_chi_squared=method1_chi_squared,
+                    method2_chi_squared=method2_chi_squared,
                     replay_results=replay_results,
                     replay_ratios=replay_ratios,
                     average_replay_ratios=average_replay_ratios,

@@ -860,3 +860,98 @@ def calculate_area_statistics(
         }
 
     return statistics
+
+def calculate_chi_squared_comparison(
+    theoretical_probabilities,
+    observed_counts,
+):
+    """
+    Сравнивает теоретические и экспериментальные вероятности
+    трёх областей по заданной формуле:
+
+        chi2 = sum(((p_j - p_hat_j) / p_j) ** 2)
+
+    theoretical_probabilities и observed_counts должны содержать
+    ключи orange, blue и green. Фактические вероятности
+    рассчитываются по общему количеству элементов всех replay.
+    """
+    area_names = ("orange", "blue", "green")
+
+    missing_probabilities = [
+        area for area in area_names
+        if area not in theoretical_probabilities
+    ]
+    missing_counts = [
+        area for area in area_names
+        if area not in observed_counts
+    ]
+    if missing_probabilities:
+        raise ValueError(
+            "Не заданы теоретические вероятности областей: "
+            + ", ".join(missing_probabilities)
+        )
+    if missing_counts:
+        raise ValueError(
+            "Не заданы фактические количества областей: "
+            + ", ".join(missing_counts)
+        )
+
+    probabilities = {
+        area: float(theoretical_probabilities[area])
+        for area in area_names
+    }
+    counts = {
+        area: int(observed_counts[area])
+        for area in area_names
+    }
+
+    if any(not np.isfinite(p) or p <= 0 for p in probabilities.values()):
+        raise ValueError(
+            "Для расчёта chi² все теоретические вероятности "
+            "должны быть конечными и строго больше нуля."
+        )
+    if any(count < 0 for count in counts.values()):
+        raise ValueError("Фактические количества не могут быть отрицательными.")
+
+    probability_sum = sum(probabilities.values())
+    if not np.isclose(probability_sum, 1.0, atol=1e-10):
+        raise ValueError(
+            "Сумма теоретических вероятностей трёх областей "
+            f"должна быть равна 1, получено {probability_sum:.12g}."
+        )
+
+    total_count = sum(counts.values())
+    if total_count <= 0:
+        raise ValueError(
+            "Общее фактическое количество элементов должно быть больше нуля."
+        )
+
+    areas = {}
+    chi_squared = 0.0
+    for area in area_names:
+        p = probabilities[area]
+        p_hat = counts[area] / total_count
+        contribution = ((p - p_hat) / p) ** 2
+        areas[area] = {
+            "theoretical_probability": p,
+            "empirical_probability": float(p_hat),
+            "observed_count": counts[area],
+            "total_count": total_count,
+            "contribution": float(contribution),
+        }
+        chi_squared += contribution
+
+    empirical_sum = sum(
+        result["empirical_probability"] for result in areas.values()
+    )
+    if not np.isclose(empirical_sum, 1.0, atol=1e-12):
+        raise RuntimeError(
+            "Сумма экспериментальных вероятностей трёх областей не равна 1."
+        )
+
+    return {
+        "areas": areas,
+        "chi_squared": float(chi_squared),
+        "total_count": total_count,
+    }
+
