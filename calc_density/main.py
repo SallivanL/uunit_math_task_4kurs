@@ -1,3 +1,5 @@
+"""Точка входа: orchestration экспериментов по выбранным законам распределения."""
+
 import numpy as np
 
 from calc import (
@@ -5,14 +7,13 @@ from calc import (
     calculate_areas,
     calculate_cdf_area_probabilities,
     calculate_equal_cdf_areas,
-    calculate_method2_replay_totals,
     run_replays,
+    calculate_method2_replay_totals,
     calculate_replay_totals,
     calculate_area_statistics,
     calculate_replay_ratios,
     calculate_average_replay_ratios,
 )
-
 from plotting import (
     plot_three_densities,
     plot_cdf,
@@ -23,244 +24,148 @@ from plotting import (
     plot_equal_cdf,
     plot_equal_cdf_histogram,
 )
-
 from report import clear_results, save_experiment
 
 
+# Номера законов, которые должны быть запущены:
+# 1 — равномерный; 2 — показательный; 3 — нормальный; 4 — гамма.
+distribution_ids = [1, 2, 3, 4]
+
+# Список конфигураций. Несколько конфигураций одного закона разрешены.
+distribution_configs = [
+    {"id": 1, "key": "uniform", "label": "Равномерное распределение", "params": {"a": 0, "b": 1}},
+    {"id": 2, "key": "exponential", "label": "Показательное распределение", "params": {"rate": 1}},
+    {"id": 3, "key": "normal", "label": "Нормальное распределение", "params": {"mu": 0, "sigma": 1}},
+    {"id": 4, "key": "gamma", "label": "Гамма-распределение", "params": {"k": 1, "theta": 1}},
+    {"id": 4, "key": "gamma", "label": "Гамма-распределение", "params": {"k": 8, "theta": 1}},
+    {"id": 4, "key": "gamma", "label": "Гамма-распределение", "params": {"k": 30, "theta": 1}},
+]
+
+# Общие параметры эксперимента.
+m = 0.8
+replays = 10
+N_values = [10, 100]
+random_seed = None  # Укажи целое число (например, 42) для повторяемых результатов.
+
+
 def main():
-    m = 0.8
-    replays = 10
+    selected_configs = [config for config in distribution_configs if config["id"] in distribution_ids]
+    if not selected_configs:
+        raise ValueError("В distribution_ids необходимо указать хотя бы один закон от 1 до 4.")
+    invalid_ids = set(distribution_ids) - {1, 2, 3, 4}
+    if invalid_ids:
+        raise ValueError(f"Неизвестные номера законов: {sorted(invalid_ids)}")
 
-    k_values = [
-        1,
-        8,
-        30,
-    ]
-
-    theta_values = [1]
-    N_values = [10, 100]
-
-    random_seed = None
-
+    # Очищаем предыдущие результаты один раз перед всей серией запусков.
     clear_results()
-
     rng = np.random.default_rng(random_seed)
 
-    for k in k_values:
-        for theta in theta_values:
-            for N in N_values:
+    for distribution in selected_configs:
+        for N in N_values:
+            x, f, f_min, f_max = calculate_densities(
+                distribution=distribution,
+                N=N,
+            )
 
-                # --------------------------------------------------
-                # Расчёт плотностей
-                # --------------------------------------------------
+            areas = calculate_areas(
+                x=x,
+                f=f,
+                f_min=f_min,
+                f_max=f_max,
+                m=m,
+            )
 
-                x, f, f_min, f_max = calculate_densities(
-                    k=k,
-                    theta=theta,
-                    N=N,
-                )
+            cdf_area_probabilities = calculate_cdf_area_probabilities(
+                distribution=distribution,
+                x=x,
+                areas=areas,
+            )
 
-                # --------------------------------------------------
-                # Расчёт трёх областей
-                # --------------------------------------------------
+            equal_cdf_areas = calculate_equal_cdf_areas(
+                distribution=distribution,
+                x=x,
+            )
 
-                areas = calculate_areas(
-                    x=x,
-                    f=f,
-                    f_min=f_min,
-                    f_max=f_max,
-                    m=m,
-                )
+            replay_results = run_replays(
+                distribution=distribution,
+                N=N,
+                replays=replays,
+                x=x,
+                areas=areas,
+                rng=rng,
+                equal_cdf_areas=equal_cdf_areas,
+            )
 
-                # --------------------------------------------------
-                # Основной график распределений
-                # --------------------------------------------------
+            replay_totals = calculate_replay_totals(replay_results)
+            method2_replay_totals = calculate_method2_replay_totals(replay_results)
+            area_statistics = calculate_area_statistics(
+                distribution=distribution,
+                N=N,
+                x=x,
+                areas=areas,
+                replay_results=replay_results,
+            )
+            replay_ratios = calculate_replay_ratios(replay_results)
+            average_replay_ratios = calculate_average_replay_ratios(replay_ratios)
 
-                figure = plot_three_densities(
-                    x=x,
-                    f=f,
-                    f_min=f_min,
-                    f_max=f_max,
-                    areas=areas,
-                    k=k,
-                    theta=theta,
-                    N=N,
-                )
+            # Построение графиков. plotting.py не сохраняет файлы.
+            figure = plot_three_densities(
+                x=x, f=f, f_min=f_min, f_max=f_max, areas=areas,
+                distribution=distribution, N=N,
+            )
+            cdf_figure = plot_cdf(
+                x=x, cdf_area_probabilities=cdf_area_probabilities,
+                distribution=distribution, N=N,
+            )
+            histogram = plot_replay_histogram(
+                average_replay_ratios=average_replay_ratios,
+                distribution=distribution, N=N, replays=replays,
+            )
+            replay_histogram = plot_replays_histogram(
+                replay_results=replay_results, N=N, distribution=distribution,
+            )
+            method2_replay_histogram = plot_method2_replays_histogram(
+                replay_results=replay_results, N=N, distribution=distribution,
+            )
+            cdf_histogram = plot_cdf_histogram(
+                cdf_area_probabilities=cdf_area_probabilities,
+                distribution=distribution, N=N,
+            )
+            equal_cdf_figure = plot_equal_cdf(
+                x=x, equal_cdf_areas=equal_cdf_areas,
+                distribution=distribution, N=N,
+            )
+            equal_cdf_histogram = plot_equal_cdf_histogram(
+                equal_cdf_areas=equal_cdf_areas,
+                distribution=distribution, N=N,
+            )
 
-                # --------------------------------------------------
-                # Расчёт вероятностей через F(x)
-                # --------------------------------------------------
-
-                cdf_area_probabilities = (
-                    calculate_cdf_area_probabilities(
-                        k=k,
-                        theta=theta,
-                        x=x,
-                        areas=areas,
-                    )
-                )
-
-                # --------------------------------------------------
-                # График F(x) с точками пересечения
-                # --------------------------------------------------
-
-                cdf_figure = plot_cdf(
-                    x=x,
-                    cdf_area_probabilities=cdf_area_probabilities,
-                    areas=areas,
-                    k=k,
-                    theta=theta,
-                    N=N,
-                )
-
-                # --------------------------------------------------
-                # Гистограмма по F(x)
-                # --------------------------------------------------
-
-                cdf_histogram = plot_cdf_histogram(
-                    cdf_area_probabilities=(
-                        cdf_area_probabilities
-                    ),
-                    k=k,
-                    theta=theta,
-                    N=N,
-                )
-
-                # --------------------------------------------------
-                # Метод 2: равное деление диапазона F(x) на три части
-                # --------------------------------------------------
-
-                equal_cdf_areas = calculate_equal_cdf_areas(
-                    k=k, theta=theta, x=x,
-                )
-                equal_cdf_figure = plot_equal_cdf(
-                    x=x, equal_cdf_areas=equal_cdf_areas,
-                    k=k, theta=theta, N=N,
-                )
-                equal_cdf_histogram = plot_equal_cdf_histogram(
-                    equal_cdf_areas=equal_cdf_areas,
-                    k=k, theta=theta, N=N,
-                )
-
-                # --------------------------------------------------
-                # Проведение replay: оба метода используют одни выборки
-                # --------------------------------------------------
-
-                replay_results = run_replays(
-                    k=k,
-                    theta=theta,
-                    N=N,
-                    replays=replays,
-                    x=x,
-                    areas=areas,
-                    rng=rng,
-                    equal_cdf_areas=equal_cdf_areas,
-                )
-
-                # --------------------------------------------------
-                # Итоговые результаты replay
-                # --------------------------------------------------
-
-                replay_totals = calculate_replay_totals(
-                    replay_results
-                )
-                method2_replay_totals = calculate_method2_replay_totals(
-                    replay_results
-                )
-
-                # --------------------------------------------------
-                # Статистика областей
-                # --------------------------------------------------
-
-                area_statistics = calculate_area_statistics(
-                    k=k,
-                    theta=theta,
-                    N=N,
-                    x=x,
-                    areas=areas,
-                    replay_results=replay_results,
-                )
-
-                # --------------------------------------------------
-                # Доли n / N для каждого replay
-                # --------------------------------------------------
-
-                replay_ratios = calculate_replay_ratios(
-                    replay_results=replay_results,
-                )
-
-                # --------------------------------------------------
-                # Средние доли n / N по всем replay
-                # --------------------------------------------------
-
-                average_replay_ratios = (
-                    calculate_average_replay_ratios(
-                        replay_ratios=replay_ratios,
-                    )
-                )
-
-                # --------------------------------------------------
-                # Итоговая гистограмма replay
-                # --------------------------------------------------
-
-                histogram = plot_replay_histogram(
-                    average_replay_ratios=average_replay_ratios,
-                    k=k,
-                    theta=theta,
-                    N=N,
-                    replays=replays,
-                )
-
-                # --------------------------------------------------
-                # Один рисунок со всеми replay-гистограммами
-                # --------------------------------------------------
-
-                replay_histogram = plot_replays_histogram(
-                    replay_results=replay_results,
-                    N=N,
-                    k=k,
-                    theta=theta,
-                )
-
-                # Единый рисунок со всеми replay-гистограммами метода 2
-                method2_replay_histogram = plot_method2_replays_histogram(
-                    replay_results=replay_results,
-                    N=N,
-                    k=k,
-                    theta=theta,
-                )
-
-                # --------------------------------------------------
-                # Сохранение результатов
-                # --------------------------------------------------
-
-                save_experiment(
-                    k=k,
-                    theta=theta,
-                    N=N,
-                    m=m,
-                    replays=replays,
-                    x=x,
-                    areas=areas,
-                    figure=figure,
-                    cdf_figure=cdf_figure,
-                    histogram=histogram,
-                    replay_histogram=replay_histogram,
-                    method2_replay_histogram=method2_replay_histogram,
-                    cdf_histogram=cdf_histogram,
-                    equal_cdf_figure=equal_cdf_figure,
-                    equal_cdf_histogram=equal_cdf_histogram,
-                    equal_cdf_areas=equal_cdf_areas,
-                    method2_replay_totals=method2_replay_totals,
-                    replay_results=replay_results,
-                    replay_ratios=replay_ratios,
-                    average_replay_ratios=average_replay_ratios,
-                    replay_totals=replay_totals,
-                    area_statistics=area_statistics,
-                    cdf_area_probabilities=(
-                        cdf_area_probabilities
-                    ),
-                )
+            # report.py — единственный модуль, который сохраняет результаты на диск.
+            output_dir = save_experiment(
+                distribution=distribution,
+                N=N,
+                m=m,
+                replays=replays,
+                x=x,
+                areas=areas,
+                figure=figure,
+                cdf_figure=cdf_figure,
+                histogram=histogram,
+                replay_histogram=replay_histogram,
+                method2_replay_histogram=method2_replay_histogram,
+                cdf_histogram=cdf_histogram,
+                equal_cdf_figure=equal_cdf_figure,
+                equal_cdf_histogram=equal_cdf_histogram,
+                equal_cdf_areas=equal_cdf_areas,
+                method2_replay_totals=method2_replay_totals,
+                replay_results=replay_results,
+                replay_ratios=replay_ratios,
+                average_replay_ratios=average_replay_ratios,
+                replay_totals=replay_totals,
+                area_statistics=area_statistics,
+                cdf_area_probabilities=cdf_area_probabilities,
+            )
+            print(f"Готово: {distribution['label']}, {distribution['params']}, N={N} -> {output_dir}")
 
 
 if __name__ == "__main__":
