@@ -9,6 +9,7 @@ from calc import (
     calculate_method2_replay_totals,
     calculate_method3_replay_totals,
     calculate_chi_squared_comparison,
+    calculate_expected_squared_error,
     run_replays,
     calculate_replay_totals,
     calculate_area_statistics,
@@ -29,9 +30,10 @@ from plotting import (
     plot_method3_cdf,
     plot_method3_theoretical_histogram,
     plot_method3_replays_histogram,
+    plot_comparison_three_methods,
 )
 
-from report import clear_results, save_experiment
+from report import clear_results, save_experiment, save_comparison_graph
 
 
 def main():
@@ -54,6 +56,14 @@ def main():
 
     for k in k_values:
         for theta in theta_values:
+            # Аналитические значения M[X²] накапливаются отдельно для каждой пары (k, theta).
+            comparison_results = {
+                "N": [],
+                "method_1": [],
+                "method_2": [],
+                "method_3": [],
+            }
+
             for N in N_values:
                 # --------------------------------------------------
                 # Расчёт плотностей
@@ -243,6 +253,47 @@ def main():
                 )
 
                 # --------------------------------------------------
+                # Аналитическое математическое ожидание квадрата ошибки
+                # M[X²] = sum_j p_j * (1 - p_j) / N для каждого метода.
+                # --------------------------------------------------
+
+                method1_expected_squared_error = calculate_expected_squared_error(
+                    theoretical_probabilities={
+                        "orange": cdf_area_probabilities["orange_probability"],
+                        "blue": cdf_area_probabilities["blue_probability"],
+                        "green": cdf_area_probabilities["green_probability"],
+                    },
+                    sample_size=N,
+                )
+                method2_expected_squared_error = calculate_expected_squared_error(
+                    theoretical_probabilities={
+                        "orange": equal_cdf_areas["orange_probability"],
+                        "blue": equal_cdf_areas["blue_probability"],
+                        "green": equal_cdf_areas["green_probability"],
+                    },
+                    sample_size=N,
+                )
+                method3_expected_squared_error = calculate_expected_squared_error(
+                    theoretical_probabilities={
+                        "orange": method3_areas["orange_probability"],
+                        "blue": method3_areas["blue_probability"],
+                        "green": method3_areas["green_probability"],
+                    },
+                    sample_size=N,
+                )
+
+                comparison_results["N"].append(int(N))
+                comparison_results["method_1"].append(
+                    method1_expected_squared_error
+                )
+                comparison_results["method_2"].append(
+                    method2_expected_squared_error
+                )
+                comparison_results["method_3"].append(
+                    method3_expected_squared_error
+                )
+
+                # --------------------------------------------------
                 # Статистика областей
                 # --------------------------------------------------
 
@@ -351,6 +402,20 @@ def main():
                     method3_replay_totals=method3_replay_totals,
                     method3_chi_squared=method3_chi_squared,
                 )
+
+            # После обработки всех N строим один сводный график для k и theta.
+            comparison_figure = plot_comparison_three_methods(
+                N_values=comparison_results["N"],
+                method1_values=comparison_results["method_1"],
+                method2_values=comparison_results["method_2"],
+                method3_values=comparison_results["method_3"],
+            )
+            save_comparison_graph(
+                figure=comparison_figure,
+                comparison_results=comparison_results,
+                k=k,
+                theta=theta,
+            )
 
 
 if __name__ == "__main__":

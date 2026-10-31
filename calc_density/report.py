@@ -587,3 +587,51 @@ def save_report(
 
     with open(report_file, "w", encoding="utf-8") as file:
         file.write("\n".join(lines))
+
+
+def save_comparison_graph(figure, comparison_results, k, theta):
+    """Сохраняет сводный график и CSV с данными в корень results/k_X/."""
+    expected_keys = ("method_1", "method_2", "method_3")
+    if "N" not in comparison_results:
+        raise ValueError("В comparison_results отсутствует список N")
+    row_count = len(comparison_results["N"])
+    if row_count == 0:
+        raise ValueError("comparison_results не содержит значений N")
+    if any(
+        key not in comparison_results
+        or len(comparison_results[key]) != row_count
+        for key in expected_keys
+    ):
+        raise ValueError("Количество значений методов должно совпадать с количеством N")
+
+    output_dir = os.path.join(RESULTS_DIR, f"k_{k}")
+    os.makedirs(output_dir, exist_ok=True)
+
+    filename_suffix = f"theta_{theta}"
+    graph_file = os.path.join(
+        output_dir,
+        f"comparison_three_methods_{filename_suffix}.png",
+    )
+    figure.savefig(graph_file, dpi=150)
+    plt.close(figure)
+
+    csv_file = os.path.join(
+        output_dir,
+        f"comparison_three_methods_{filename_suffix}.csv",
+    )
+    with open(csv_file, "w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow([
+            "N",
+            "method_1_expected_squared_error_M_X2",
+            "method_2_expected_squared_error_M_X2",
+            "method_3_expected_squared_error_M_X2",
+        ])
+
+        for index in range(row_count):
+            writer.writerow([
+                comparison_results["N"][index],
+                f"{comparison_results['method_1'][index]:.12g}",
+                f"{comparison_results['method_2'][index]:.12g}",
+                f"{comparison_results['method_3'][index]:.12g}",
+            ])

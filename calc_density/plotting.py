@@ -826,3 +826,72 @@ def plot_method3_replays_histogram(replay_results, N, k, theta):
     ax.set_axisbelow(True)
     figure.tight_layout()
     return figure
+
+
+def plot_comparison_three_methods(
+    N_values,
+    method1_values,
+    method2_values,
+    method3_values,
+):
+    """Строит зависимость M[X²] от N для трёх методов.
+
+    Функция только формирует и возвращает figure. Сохранение файла
+    и создание директорий выполняются исключительно в report.py.
+    """
+    import numpy as np
+
+    N_array = np.asarray(N_values, dtype=float)
+    series = {
+        "Метод 1": np.asarray(method1_values, dtype=float),
+        "Метод 2": np.asarray(method2_values, dtype=float),
+        "Метод 3": np.asarray(method3_values, dtype=float),
+    }
+
+    if N_array.ndim != 1 or N_array.size == 0:
+        raise ValueError("N_values должен содержать хотя бы одно значение")
+    if not np.all(np.isfinite(N_array)) or np.any(N_array <= 0):
+        raise ValueError("Все значения N должны быть конечными и больше нуля")
+    if np.unique(N_array).size != N_array.size:
+        raise ValueError("Значения N не должны повторяться")
+
+    for method_name, values in series.items():
+        if values.ndim != 1 or values.size != N_array.size:
+            raise ValueError(
+                f"Количество значений {method_name} должно совпадать с N_values"
+            )
+        if not np.all(np.isfinite(values)) or np.any(values < 0):
+            raise ValueError(
+                f"Значения M[X²] для {method_name} должны быть конечными и неотрицательными"
+            )
+
+    # График всегда строится по возрастанию N, независимо от порядка в main.py.
+    order = np.argsort(N_array)
+    N_array = N_array[order]
+    series = {name: values[order] for name, values in series.items()}
+
+    figure, ax = plt.subplots(figsize=(11, 7))
+    markers = ("o", "s", "^")
+
+    for (method_name, values), marker in zip(series.items(), markers):
+        ax.plot(
+            N_array,
+            values,
+            marker=marker,
+            linewidth=2,
+            markersize=7,
+            label=method_name,
+        )
+
+    ax.set_title("Сравнение трех методов", fontsize=15)
+    ax.set_xlabel("Размер выборки N", fontsize=13)
+    ax.set_ylabel(r"$M[x^2]$", fontsize=13)
+    ax.set_xticks(N_array)
+    ax.set_ylim(bottom=0)
+    ax.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=11)
+    ax.set_axisbelow(True)
+    figure.tight_layout()
+
+    return figure

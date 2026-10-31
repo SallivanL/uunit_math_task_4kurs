@@ -1051,3 +1051,96 @@ def calculate_chi_squared_comparison(
         "total_count": total_count,
     }
 
+
+
+def calculate_expected_squared_error(theoretical_probabilities, sample_size):
+    """Вычисляет M[X²] для ошибки эмпирических долей по трём областям.
+
+    Для каждой области X_j = p_hat_j - p_j, где p_hat_j — эмпирическая
+    доля в выборке размера N, а p_j — теоретическая вероятность.
+    На график передаётся M[X²] для X² = sum_j (p_hat_j - p_j)²:
+
+        M[X²] = sum_j p_j * (1 - p_j) / N.
+
+    Это математическое ожидание квадрата абсолютной ошибки, а не
+    нормированная статистика chi-squared. Значение вычисляется аналитически,
+    поэтому кривая не зависит от случайного шума отдельных replay.
+    """
+    if not isinstance(sample_size, (int, np.integer)) or sample_size <= 0:
+        raise ValueError("sample_size должно быть положительным целым числом")
+
+    area_names = ("orange", "blue", "green")
+    missing = [area for area in area_names if area not in theoretical_probabilities]
+    if missing:
+        raise ValueError(
+            "Не заданы теоретические вероятности областей: " + ", ".join(missing)
+        )
+
+    probabilities = np.asarray(
+        [float(theoretical_probabilities[area]) for area in area_names],
+        dtype=float,
+    )
+    if not np.all(np.isfinite(probabilities)):
+        raise ValueError("Теоретические вероятности должны быть конечными")
+    if np.any(probabilities < 0) or np.any(probabilities > 1):
+        raise ValueError("Теоретические вероятности должны находиться в [0, 1]")
+    if not np.isclose(np.sum(probabilities), 1.0, atol=1e-10):
+        raise ValueError("Сумма теоретических вероятностей должна быть равна 1")
+
+    expected_squared_error = np.sum(probabilities * (1.0 - probabilities)) / int(sample_size)
+    return float(expected_squared_error)
+
+
+
+def calculate_mean_chi_squared_by_replay(
+    replay_results,
+    theoretical_probabilities,
+    count_keys,
+):
+    """Рассчитывает M[χ²] как среднее значение χ² по отдельным replay.
+
+    Для каждого replay вычисляется та же статистика, что и в
+    calculate_chi_squared_comparison, но по счётчикам только этого replay.
+    Возвращаются среднее значение и список значений по всем повторам.
+
+    count_keys — соответствие областей именам счётчиков в replay_results,
+    например {"orange": "orange_count", ...}.
+    """
+    if not replay_results:
+        raise ValueError("replay_results не должен быть пустым")
+
+    area_names = ("orange", "blue", "green")
+    missing_areas = [area for area in area_names if area not in count_keys]
+    if missing_areas:
+        raise ValueError(
+            "Не заданы ключи счётчиков областей: " + ", ".join(missing_areas)
+        )
+
+    chi_squared_values = []
+    for replay in replay_results:
+        missing_counts = [
+            count_keys[area]
+            for area in area_names
+            if count_keys[area] not in replay
+        ]
+        if missing_counts:
+            replay_number = replay.get("replay", "неизвестен")
+            raise ValueError(
+                f"В replay {replay_number} отсутствуют счётчики: "
+                + ", ".join(missing_counts)
+            )
+
+        observed_counts = {
+            area: int(replay[count_keys[area]])
+            for area in area_names
+        }
+        comparison = calculate_chi_squared_comparison(
+            theoretical_probabilities=theoretical_probabilities,
+            observed_counts=observed_counts,
+        )
+        chi_squared_values.append(comparison["chi_squared"])
+
+    return {
+        "mean": float(np.mean(chi_squared_values)),
+        "values": chi_squared_values,
+    }
