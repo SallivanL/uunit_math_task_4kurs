@@ -819,6 +819,7 @@ def calculate_area_statistics(
     x,
     areas,
     replay_results,
+    theoretical_probabilities=None,
 ):
     """
     Рассчитывает статистику трёх областей.
@@ -843,38 +844,31 @@ def calculate_area_statistics(
         areas["green"]["left"]
     ]
 
-    p_orange = gamma.cdf(
-        orange_boundary,
-        a=k,
-        scale=theta,
-    )
+    if theoretical_probabilities is None:
+        p_orange = gamma.cdf(
+            orange_boundary,
+            a=k,
+            scale=theta,
+        )
 
-    p_green_start = gamma.cdf(
-        green_boundary,
-        a=k,
-        scale=theta,
-    )
+        p_green_start = gamma.cdf(
+            green_boundary,
+            a=k,
+            scale=theta,
+        )
 
-    p_blue = (
-        p_green_start
-        - p_orange
-    )
+        p_blue = p_green_start - p_orange
+        p_green = 1.0 - p_green_start
 
-    p_green = (
-        1
-        - p_green_start
-    )
+        theoretical_probabilities = {
+            "orange": p_orange,
+            "blue": p_blue,
+            "green": p_green,
+        }
 
-    theoretical_probabilities = {
-        "orange": p_orange,
-        "blue": p_blue,
-        "green": p_green,
-    }
-
-    probability_sum = (
-        p_orange
-        + p_blue
-        + p_green
+    probability_sum = sum(
+        float(theoretical_probabilities[area])
+        for area in ("orange", "blue", "green")
     )
 
     if not np.isclose(
@@ -1144,3 +1138,365 @@ def calculate_mean_chi_squared_by_replay(
         "mean": float(np.mean(chi_squared_values)),
         "values": chi_squared_values,
     }
+
+
+# -----------------------------------------------------------------------------
+# Смешанная выборка из нескольких Gamma-распределений.
+# Эти функции используются только когда massive_k содержит более одного k.
+# -----------------------------------------------------------------------------
+
+
+def calculate_mixed_sample_counts(k_values, N):
+    """Распределяет N элементов между k максимально равномерно.
+
+    Остаток распределяется по одному элементу первым компонентам.
+    Например, N=1000 и три k дают [334, 333, 333].
+    """
+    values = list(k_values)
+    if not values:
+        raise ValueError("k_values не должен быть пустым")
+    if len(set(values)) != len(values):
+        raise ValueError("Значения k_values не должны повторяться")
+    if any(not np.isfinite(k) or k <= 0 for k in values):
+        raise ValueError("Все значения k должны быть конечными и больше нуля")
+    if not isinstance(N, (int, np.integer)) or N <= 0:
+        raise ValueError("N должно быть положительным целым числом")
+    if N < len(values):
+        raise ValueError(
+            "N должно быть не меньше количества k, чтобы каждому распределению "
+            "достался хотя бы один элемент"
+        )
+
+    base_count, remainder = divmod(int(N), len(values))
+    return [base_count + (1 if index < remainder else 0) for index in range(len(values))]
+
+
+def calculate_mixed_densities(k_values, theta, N, sample_counts, points=5000):
+    """Рассчитывает плотности смеси и экстремумов фиксированной смешанной выборки.
+
+    Каждая компонента Gamma(k_i, theta) представлена ровно n_i элементами.
+    f_min и f_max — плотности минимума и максимума независимых, но
+    не одинаково распределённых элементов.
+    """
+    k_values = list(k_values)
+    sample_counts = [int(value) for value in sample_counts]
+    if not k_values or len(k_values) != len(sample_counts):
+        raise ValueError("Для каждого k должно быть задано количество элементов")
+    if theta <= 0 or not np.isfinite(theta):
+        raise ValueError("theta должно быть конечным и больше нуля")
+    if N <= 0 or int(N) != N:
+        raise ValueError("N должно быть положительным целым числом")
+    if sum(sample_counts) != int(N) or any(value < 0 for value in sample_counts):
+        raise ValueError("Сумма sample_counts должна быть равна N")
+    if any(k <= 0 or not np.isfinite(k) for k in k_values):
+        raise ValueError("Все значения k должны быть конечными и больше нуля")
+    if points < 2:
+        raise ValueError("points должно быть не меньше 2")
+
+    active = [(float(k), count) for k, count in zip(k_values, sample_counts) if count > 0]
+    if not active:
+        raise ValueError("В смешанной выборке должен быть хотя бы один активный компонент")
+
+    # Область x охватывает практически всю массу распределения максимума.
+    quantile_probability = 0.9999 ** (1.0 / int(N))
+    x_max = max(
+        float(gamma.ppf(quantile_probability, a=k, scale=theta))
+        for k, _ in active
+    )
+    if points >= 3000:
+        def minimum_cdf_at(value):
+            log_survival = 0.0
+            for component_k, component_count in active:
+                component_cdf = float(gamma.cdf(value, a=component_k, scale=theta))
+                if component_cdf >= 1.0:
+                    return 1.0
+                log_survival += component_count * np.log1p(-component_cdf)
+            return float(-np.expm1(log_survival))
+
+        def mixture_cdf_at(value):
+            return float(sum(
+                (component_count / int(N))
+                * gamma.cdf(value, a=component_k, scale=theta)
+                for component_k, component_count in active
+            ))
+
+        def bisect_quantile(target, cdf_function):
+            low, high = 0.0, x_max
+            for _ in range(80):
+                middle = (low + high) / 2.0
+                if cdf_function(middle) < target:
+                    low = middle
+                else:
+                    high = middle
+            return (low + high) / 2.0
+
+        # Плотность минимума сосредоточена около нуля, а плотность максимума —
+        # в правом хвосте. Неразбитая равномерная сетка теряла бы точность f_min
+        # при большом N и широком диапазоне x. Поэтому выделяем отдельные
+        # участки сетки для нижнего хвоста, основной массы и верхнего хвоста.
+        minimum_focus = bisect_quantile(0.995, minimum_cdf_at)
+        mixture_focus = bisect_quantile(0.95, mixture_cdf_at)
+        if mixture_focus <= minimum_focus:
+            mixture_focus = minimum_focus + 0.7 * (x_max - minimum_focus)
+
+        low_points = max(2, int(points * 0.35))
+        middle_points = max(2, int(points * 0.45))
+        high_points = int(points) - low_points - middle_points
+        if high_points < 2:
+            high_points = 2
+            middle_points = max(2, int(points) - low_points - high_points)
+
+        x = np.concatenate((
+            np.linspace(0.0, minimum_focus, low_points, endpoint=False),
+            np.linspace(minimum_focus, mixture_focus, middle_points, endpoint=False),
+            np.linspace(mixture_focus, x_max, high_points),
+        ))
+    else:
+        x = np.linspace(0.0, x_max, int(points))
+
+    component_pdfs = []
+    component_cdfs = []
+    for k, _ in active:
+        component_pdfs.append(gamma.pdf(x, a=k, scale=theta))
+        component_cdfs.append(gamma.cdf(x, a=k, scale=theta))
+
+    component_pdfs = np.asarray(component_pdfs, dtype=float)
+    component_cdfs = np.asarray(component_cdfs, dtype=float)
+    active_counts = np.asarray([count for _, count in active], dtype=int)
+    weights = active_counts / float(N)
+
+    f = np.sum(weights[:, None] * component_pdfs, axis=0)
+
+    # f_max(x) = sum_i n_i f_i(x) F_i(x)^(n_i-1) * product_{j!=i} F_j(x)^n_j
+    # f_min(x) = sum_i n_i f_i(x) (1-F_i(x))^(n_i-1)
+    #           * product_{j!=i} (1-F_j(x))^n_j
+    f_max = np.zeros_like(x)
+    f_min = np.zeros_like(x)
+    for index, count in enumerate(active_counts):
+        pdf_i = component_pdfs[index]
+        cdf_i = component_cdfs[index]
+        other_max = np.ones_like(x)
+        other_min = np.ones_like(x)
+        for other_index, other_count in enumerate(active_counts):
+            if other_index == index:
+                continue
+            other_cdf = component_cdfs[other_index]
+            other_max *= np.power(other_cdf, other_count)
+            other_min *= np.power(1.0 - other_cdf, other_count)
+
+        f_max += (
+            count * pdf_i * np.power(cdf_i, count - 1) * other_max
+        )
+        f_min += (
+            count * pdf_i * np.power(1.0 - cdf_i, count - 1) * other_min
+        )
+
+    return x, f, f_min, f_max
+
+
+def _mixed_cdf_values(k_values, theta, x, sample_counts):
+    """Возвращает CDF общей выборки с фиксированными квотами компонентов."""
+    k_values = list(k_values)
+    sample_counts = np.asarray(sample_counts, dtype=float)
+    if len(k_values) != sample_counts.size or sample_counts.sum() <= 0:
+        raise ValueError("Некорректные k_values или sample_counts")
+    cdf_values = np.zeros_like(np.asarray(x, dtype=float))
+    for k, count in zip(k_values, sample_counts):
+        cdf_values += (count / sample_counts.sum()) * gamma.cdf(
+            x, a=k, scale=theta
+        )
+    return cdf_values
+
+
+def calculate_mixed_cdf_area_probabilities(k_values, theta, x, areas, sample_counts):
+    """Теоретические вероятности областей для смеси Gamma-компонентов."""
+    orange_boundary = float(x[areas["orange"]["right"]])
+    green_boundary = float(x[areas["green"]["left"]])
+    if orange_boundary >= green_boundary:
+        raise ValueError("Граница оранжевой области должна быть меньше зелёной")
+
+    cdf_values = _mixed_cdf_values(k_values, theta, x, sample_counts)
+    cdf_orange = float(_mixed_cdf_values(k_values, theta, np.asarray([orange_boundary]), sample_counts)[0])
+    cdf_green = float(_mixed_cdf_values(k_values, theta, np.asarray([green_boundary]), sample_counts)[0])
+    probabilities = {
+        "orange_probability": cdf_orange,
+        "blue_probability": cdf_green - cdf_orange,
+        "green_probability": 1.0 - cdf_green,
+    }
+    total = sum(probabilities.values())
+    if any(value < -1e-12 or not np.isfinite(value) for value in probabilities.values()):
+        raise RuntimeError("Вероятности смешанного распределения некорректны")
+    if not np.isclose(total, 1.0, atol=1e-10):
+        raise RuntimeError("Сумма вероятностей смешанного распределения не равна 1")
+
+    return {
+        "orange_boundary": orange_boundary,
+        "green_boundary": green_boundary,
+        "cdf_orange": cdf_orange,
+        "cdf_green": cdf_green,
+        "cdf_values": cdf_values,
+        **probabilities,
+        "total": float(total),
+    }
+
+
+def calculate_mixed_equal_cdf_areas(k_values, theta, x, sample_counts):
+    """Границы метода 2 — квантили 1/3 и 2/3 общей смеси."""
+    cdf_values = _mixed_cdf_values(k_values, theta, x, sample_counts)
+    # Удаляем возможные численные плато, чтобы интерполяция была однозначной.
+    unique_cdf, unique_indices = np.unique(cdf_values, return_index=True)
+    if unique_cdf.size < 2 or unique_cdf[-1] < 2.0 / 3.0:
+        raise RuntimeError("Диапазон x недостаточен для расчёта квантилей смеси")
+    levels = (1.0 / 3.0, 2.0 / 3.0)
+    x1, x2 = np.interp(levels, unique_cdf, np.asarray(x)[unique_indices])
+    return {
+        "orange_boundary": float(x1),
+        "green_boundary": float(x2),
+        "cdf_orange": float(levels[0]),
+        "cdf_green": float(levels[1]),
+        "cdf_values": cdf_values,
+        "orange_probability": float(1.0 / 3.0),
+        "blue_probability": float(1.0 / 3.0),
+        "green_probability": float(1.0 / 3.0),
+        "total": 1.0,
+    }
+
+
+def calculate_mixed_method3_equal_x_areas(k_values, theta, x, sample_counts):
+    """Метод 3: равные интервалы x, вероятности по общей CDF смеси."""
+    x_values = np.asarray(x, dtype=float)
+    if x_values.ndim != 1 or x_values.size < 2 or np.any(np.diff(x_values) <= 0):
+        raise ValueError("x должен быть одномерным, возрастающим и содержать минимум две точки")
+    x_min = float(x_values[0])
+    x_max = float(x_values[-1])
+    width = (x_max - x_min) / 3.0
+    boundary_1 = x_min + width
+    boundary_2 = x_min + 2.0 * width
+    cdf_1 = float(_mixed_cdf_values(k_values, theta, np.asarray([boundary_1]), sample_counts)[0])
+    cdf_2 = float(_mixed_cdf_values(k_values, theta, np.asarray([boundary_2]), sample_counts)[0])
+    probabilities = {
+        "orange_probability": cdf_1,
+        "blue_probability": cdf_2 - cdf_1,
+        "green_probability": 1.0 - cdf_2,
+    }
+    if any(not np.isfinite(value) or value < 0 for value in probabilities.values()):
+        raise RuntimeError("Теоретические вероятности метода 3 некорректны")
+    total = sum(probabilities.values())
+    if not np.isclose(total, 1.0, atol=1e-10):
+        raise RuntimeError("Теоретические вероятности метода 3 не дают сумму 1")
+    return {
+        "x_min": x_min,
+        "x_max": x_max,
+        "orange_boundary": float(boundary_1),
+        "green_boundary": float(boundary_2),
+        "cdf_orange": cdf_1,
+        "cdf_green": cdf_2,
+        "cdf_values": _mixed_cdf_values(k_values, theta, x_values, sample_counts),
+        **probabilities,
+        "total": float(total),
+    }
+
+
+def calculate_mixed_component_probabilities(k_values, theta, left_boundary, right_boundary):
+    """Вероятности трёх областей отдельно для каждой Gamma-компоненты."""
+    if left_boundary >= right_boundary:
+        raise ValueError("Левая граница должна быть меньше правой")
+    result = []
+    for k in k_values:
+        cdf_left = float(gamma.cdf(left_boundary, a=k, scale=theta))
+        cdf_right = float(gamma.cdf(right_boundary, a=k, scale=theta))
+        result.append({
+            "orange": cdf_left,
+            "blue": cdf_right - cdf_left,
+            "green": 1.0 - cdf_right,
+        })
+    return result
+
+
+def calculate_stratified_expected_squared_error(component_probabilities, sample_counts):
+    """M[sum_j (p_hat_j-p_j)^2] для фиксированных квот из разных компонент.
+
+    Для области j дисперсия общей доли равна
+    sum_i n_i * p_ij * (1-p_ij) / N^2.
+    """
+    if not component_probabilities or len(component_probabilities) != len(sample_counts):
+        raise ValueError("Число наборов вероятностей должно совпадать с числом квот")
+    counts = np.asarray(sample_counts, dtype=float)
+    if np.any(counts < 0) or counts.sum() <= 0:
+        raise ValueError("sample_counts должны быть неотрицательными и иметь положительную сумму")
+    total_n = float(counts.sum())
+    area_names = ("orange", "blue", "green")
+    result = 0.0
+    for component_index, probabilities in enumerate(component_probabilities):
+        values = np.asarray([probabilities[name] for name in area_names], dtype=float)
+        if not np.all(np.isfinite(values)) or np.any(values < 0) or not np.isclose(values.sum(), 1.0, atol=1e-10):
+            raise ValueError("Вероятности компонента должны быть корректными и давать сумму 1")
+        result += counts[component_index] * float(np.sum(values * (1.0 - values))) / (total_n ** 2)
+    return float(result)
+
+
+def run_mixed_replays(k_values, theta, N, replays, x, areas, rng,
+                      sample_counts, equal_cdf_areas=None, method3_areas=None):
+    """Повторяет эксперименты на смешанных выборках.
+
+    Для каждого replay генерируется исходная выборка размера N для каждого k;
+    из каждой без возвращения выбирается квота sample_counts. Одна итоговая
+    выборка используется всеми тремя методами в этом replay.
+    """
+    k_values = list(k_values)
+    sample_counts = [int(value) for value in sample_counts]
+    if not replays or replays <= 0:
+        raise ValueError("replays должно быть > 0")
+    if len(k_values) != len(sample_counts) or sum(sample_counts) != int(N):
+        raise ValueError("sample_counts должны соответствовать k_values и суммироваться в N")
+
+    results = []
+    for replay_number in range(1, int(replays) + 1):
+        selected_parts = []
+        for k, selected_count in zip(k_values, sample_counts):
+            # По условию каждая исходная выборка имеет размер N, даже если
+            # в итоговую выборку из неё попадёт только selected_count элементов.
+            initial_sample = generate_sample(k=k, theta=theta, N=N, rng=rng)
+            if selected_count:
+                selected_indices = rng.choice(int(N), size=selected_count, replace=False)
+                selected_parts.append(initial_sample[selected_indices])
+
+        sample = np.concatenate(selected_parts) if selected_parts else np.empty(0, dtype=float)
+        rng.shuffle(sample)
+        if sample.size != int(N):
+            raise RuntimeError(f"Размер смешанной выборки replay {replay_number} не равен N")
+
+        statistics = calculate_replay_statistics(sample=sample, x=x, areas=areas)
+        method2_counts = {}
+        if equal_cdf_areas is not None:
+            b1 = equal_cdf_areas["orange_boundary"]
+            b2 = equal_cdf_areas["green_boundary"]
+            method2_counts = {
+                "method2_orange_count": int(np.sum(sample <= b1)),
+                "method2_blue_count": int(np.sum((sample > b1) & (sample < b2))),
+                "method2_green_count": int(np.sum(sample >= b2)),
+            }
+        method3_counts = {}
+        if method3_areas is not None:
+            b1 = method3_areas["orange_boundary"]
+            b2 = method3_areas["green_boundary"]
+            method3_counts = {
+                "method3_orange_count": int(np.sum(sample <= b1)),
+                "method3_blue_count": int(np.sum((sample > b1) & (sample < b2))),
+                "method3_green_count": int(np.sum(sample >= b2)),
+            }
+
+        all_counts = {
+            "orange_count": statistics["orange"]["count"],
+            "blue_count": statistics["blue"]["count"],
+            "green_count": statistics["green"]["count"],
+            **method2_counts,
+            **method3_counts,
+            "total": statistics["total"],
+            "replay": replay_number,
+        }
+        for k, selected_count in zip(k_values, sample_counts):
+            all_counts[f"selected_from_k_{k}"] = int(selected_count)
+        results.append(all_counts)
+
+    return results

@@ -70,6 +70,8 @@ def save_experiment(
     method3_areas,
     method3_replay_totals,
     method3_chi_squared,
+    k_display=None,
+    sample_counts=None,
 ):
     """
     Полностью сохраняет один эксперимент.
@@ -183,6 +185,8 @@ def save_experiment(
         method3_chi_squared=method3_chi_squared,
         method3_areas=method3_areas,
         output_dir=output_dir,
+        k_display=k_display,
+        sample_counts=sample_counts,
     )
 
 
@@ -393,7 +397,7 @@ def save_replays(
 
         writer = csv.writer(file)
 
-        writer.writerow([
+        base_columns = [
             "replay",
             "orange_count",
             "blue_count",
@@ -405,10 +409,15 @@ def save_replays(
             "method3_blue_count",
             "method3_green_count",
             "total",
-        ])
+        ]
+        quota_columns = sorted({
+            key for result in replay_results for key in result
+            if key.startswith("selected_from_k_")
+        })
+        writer.writerow(base_columns + quota_columns)
 
         for result in replay_results:
-            writer.writerow([
+            row = [
                 result["replay"],
                 result["orange_count"],
                 result["blue_count"],
@@ -420,7 +429,8 @@ def save_replays(
                 result.get("method3_blue_count", ""),
                 result.get("method3_green_count", ""),
                 result["total"],
-            ])
+            ]
+            writer.writerow(row + [result.get(key, "") for key in quota_columns])
 
 
 def save_chi_squared_comparison(
@@ -498,6 +508,8 @@ def save_report(
     method3_chi_squared,
     method3_areas,
     output_dir,
+    k_display=None,
+    sample_counts=None,
 ):
     """Сохраняет Markdown-отчёт по всем трём методам."""
     report_file = os.path.join(
@@ -520,15 +532,23 @@ def save_report(
     lines = [
         "# Результаты эксперимента",
         "",
-        f"`k = {k}`, `θ = {theta}`, `N = {N}`, `replays = {replays}`",
+        f"`k = {k_display if k_display is not None else k}`, `θ = {theta}`, `N = {N}`, `replays = {replays}`",
         "",
+    ]
+    if sample_counts is not None:
+        quota_text = ", ".join(
+            f"k={component_k}: {count} элементов"
+            for component_k, count in zip(k_display, sample_counts)
+        )
+        lines.extend([f"Квоты смешанной выборки: {quota_text}.", ""])
+    lines.extend([
         "## 1. Результаты χ²",
         "",
         "Формула: `χ² = Σ ((p_j - p̂_j) / p_j)²`, где `p_j` — теоретическая вероятность, `p̂_j` — экспериментальная вероятность.",
         "",
         "| Метод | Область | Теоретическая вероятность p_j | Экспериментальная вероятность p̂_j | Вклад в χ² |",
         "|---|---|---:|---:|---:|",
-    ]
+    ])
 
     for method_label, result in methods:
         for area_name in area_order:

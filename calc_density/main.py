@@ -15,6 +15,14 @@ from calc import (
     calculate_area_statistics,
     calculate_replay_ratios,
     calculate_average_replay_ratios,
+    calculate_mixed_sample_counts,
+    calculate_mixed_densities,
+    calculate_mixed_cdf_area_probabilities,
+    calculate_mixed_equal_cdf_areas,
+    calculate_mixed_method3_equal_x_areas,
+    calculate_mixed_component_probabilities,
+    calculate_stratified_expected_squared_error,
+    run_mixed_replays,
 )
 
 from plotting import (
@@ -36,14 +44,81 @@ from plotting import (
 from report import clear_results, save_experiment, save_comparison_graph
 
 
+def normalize_experiment_groups(massive_k, k_values):
+    """Преобразует massive_k в список независимых групп k.
+
+    Поддерживаемые варианты:
+        [1, 8, 15]                         -> одна смешанная группа
+        [[1, 8, 15], [2, 4, 6]]           -> две независимые группы
+        None                              -> прежний режим по k_values
+    """
+    if massive_k is None:
+        raw_groups = [[value] for value in k_values]
+    else:
+        if not isinstance(massive_k, (list, tuple)) or not massive_k:
+            raise ValueError("massive_k должен быть непустым списком или None")
+
+        def is_k_value(value):
+            return (
+                isinstance(value, (int, float, np.integer, np.floating))
+                and not isinstance(value, (bool, np.bool_))
+            )
+
+        if all(is_k_value(value) for value in massive_k):
+            raw_groups = [list(massive_k)]
+        else:
+            raw_groups = []
+            for group_index, group in enumerate(massive_k, start=1):
+                if not isinstance(group, (list, tuple)) or not group:
+                    raise ValueError(
+                        f"Элемент massive_k с номером {group_index} должен быть "
+                        "непустым списком значений k"
+                    )
+                if not all(is_k_value(value) for value in group):
+                    raise ValueError(
+                        f"Группа massive_k[{group_index - 1}] должна содержать "
+                        "только числовые значения k; вложенность глубже двух уровней не поддерживается"
+                    )
+                raw_groups.append(list(group))
+
+    normalized_groups = []
+    folder_names = set()
+    for group_index, group in enumerate(raw_groups, start=1):
+        normalized = [value.item() if isinstance(value, np.generic) else value for value in group]
+        for value in normalized:
+            try:
+                valid = np.isfinite(float(value)) and float(value) > 0
+            except (TypeError, ValueError, OverflowError):
+                valid = False
+            if not valid:
+                raise ValueError(
+                    f"Все значения k должны быть конечными числами больше нуля; "
+                    f"ошибка в группе {group_index}: {value!r}"
+                )
+        if len(set(normalized)) != len(normalized):
+            raise ValueError(f"В группе {group_index} значения k не должны повторяться")
+
+        folder_name = "_".join(str(value) for value in normalized)
+        if folder_name in folder_names:
+            raise ValueError(
+                f"Группы massive_k приводят к одинаковой папке k_{folder_name}; "
+                "названия групп должны быть уникальными"
+            )
+        folder_names.add(folder_name)
+        normalized_groups.append(normalized)
+
+    return normalized_groups
+
+
 def main():
     m = 0.8
     replays = 10
 
-    k_values = [
-        1,
-        8,
-    ]
+    # Каждый внутренний список — отдельный независимый смешанный эксперимент.
+    # Допустим и плоский вариант massive_k = [1, 8, 15] для одной группы.
+    # Для прежнего режима отдельных экспериментов задай massive_k = None.
+    massive_k = [[1, 8, 15], [2, 4, 6], [5, 15, 35]]
+    k_values = [1, 8]  # Используется только когда massive_k = None.
 
     theta_values = [1]
     N_values = [20, 100, 500, 1000]
@@ -54,7 +129,12 @@ def main():
 
     rng = np.random.default_rng(random_seed)
 
-    for k in k_values:
+    experiment_groups = normalize_experiment_groups(massive_k, k_values)
+
+    for k_group in experiment_groups:
+        k = int(k_group[0]) if len(k_group) == 1 else list(k_group)
+        k_folder = "_".join(str(value) for value in k_group)
+        is_mixed = len(k_group) > 1
         for theta in theta_values:
             # Аналитические значения M[X²] накапливаются отдельно для каждой пары (k, theta).
             comparison_results = {
@@ -69,11 +149,21 @@ def main():
                 # Расчёт плотностей
                 # --------------------------------------------------
 
-                x, f, f_min, f_max = calculate_densities(
-                    k=k,
-                    theta=theta,
-                    N=N,
-                )
+                if is_mixed:
+                    sample_counts = calculate_mixed_sample_counts(k_group, N)
+                    x, f, f_min, f_max = calculate_mixed_densities(
+                        k_values=k_group,
+                        theta=theta,
+                        N=N,
+                        sample_counts=sample_counts,
+                    )
+                else:
+                    sample_counts = [N]
+                    x, f, f_min, f_max = calculate_densities(
+                        k=k,
+                        theta=theta,
+                        N=N,
+                    )
 
                 # --------------------------------------------------
                 # Расчёт трёх областей
@@ -106,14 +196,21 @@ def main():
                 # Расчёт вероятностей через F(x)
                 # --------------------------------------------------
 
-                cdf_area_probabilities = (
-                    calculate_cdf_area_probabilities(
+                if is_mixed:
+                    cdf_area_probabilities = calculate_mixed_cdf_area_probabilities(
+                        k_values=k_group,
+                        theta=theta,
+                        x=x,
+                        areas=areas,
+                        sample_counts=sample_counts,
+                    )
+                else:
+                    cdf_area_probabilities = calculate_cdf_area_probabilities(
                         k=k,
                         theta=theta,
                         x=x,
                         areas=areas,
                     )
-                )
 
                 # --------------------------------------------------
                 # График F(x) с точками пересечения
@@ -145,9 +242,17 @@ def main():
                 # Метод 2: равное деление диапазона F(x) на три части
                 # --------------------------------------------------
 
-                equal_cdf_areas = calculate_equal_cdf_areas(
-                    k=k, theta=theta, x=x,
-                )
+                if is_mixed:
+                    equal_cdf_areas = calculate_mixed_equal_cdf_areas(
+                        k_values=k_group,
+                        theta=theta,
+                        x=x,
+                        sample_counts=sample_counts,
+                    )
+                else:
+                    equal_cdf_areas = calculate_equal_cdf_areas(
+                        k=k, theta=theta, x=x,
+                    )
                 equal_cdf_figure = plot_equal_cdf(
                     x=x, equal_cdf_areas=equal_cdf_areas,
                     k=k, theta=theta, N=N,
@@ -162,9 +267,17 @@ def main():
                 # Для изображений используется префикс method_3.
                 # --------------------------------------------------
 
-                method3_areas = calculate_method3_equal_x_areas(
-                    k=k, theta=theta, x=x,
-                )
+                if is_mixed:
+                    method3_areas = calculate_mixed_method3_equal_x_areas(
+                        k_values=k_group,
+                        theta=theta,
+                        x=x,
+                        sample_counts=sample_counts,
+                    )
+                else:
+                    method3_areas = calculate_method3_equal_x_areas(
+                        k=k, theta=theta, x=x,
+                    )
                 method3_distribution_figure = plot_method3_distribution(
                     x=x, f=f, f_min=f_min, f_max=f_max, method3_areas=method3_areas,
                     k=k, theta=theta, N=N,
@@ -182,17 +295,31 @@ def main():
                 # Проведение replay: все методы используют одни выборки
                 # --------------------------------------------------
 
-                replay_results = run_replays(
-                    k=k,
-                    theta=theta,
-                    N=N,
-                    replays=replays,
-                    x=x,
-                    areas=areas,
-                    rng=rng,
-                    equal_cdf_areas=equal_cdf_areas,
-                    method3_areas=method3_areas,
-                )
+                if is_mixed:
+                    replay_results = run_mixed_replays(
+                        k_values=k_group,
+                        theta=theta,
+                        N=N,
+                        replays=replays,
+                        x=x,
+                        areas=areas,
+                        rng=rng,
+                        sample_counts=sample_counts,
+                        equal_cdf_areas=equal_cdf_areas,
+                        method3_areas=method3_areas,
+                    )
+                else:
+                    replay_results = run_replays(
+                        k=k,
+                        theta=theta,
+                        N=N,
+                        replays=replays,
+                        x=x,
+                        areas=areas,
+                        rng=rng,
+                        equal_cdf_areas=equal_cdf_areas,
+                        method3_areas=method3_areas,
+                    )
 
                 # --------------------------------------------------
                 # Итоговые результаты replay
@@ -257,30 +384,63 @@ def main():
                 # M[X²] = sum_j p_j * (1 - p_j) / N для каждого метода.
                 # --------------------------------------------------
 
-                method1_expected_squared_error = calculate_expected_squared_error(
-                    theoretical_probabilities={
-                        "orange": cdf_area_probabilities["orange_probability"],
-                        "blue": cdf_area_probabilities["blue_probability"],
-                        "green": cdf_area_probabilities["green_probability"],
-                    },
-                    sample_size=N,
-                )
-                method2_expected_squared_error = calculate_expected_squared_error(
-                    theoretical_probabilities={
-                        "orange": equal_cdf_areas["orange_probability"],
-                        "blue": equal_cdf_areas["blue_probability"],
-                        "green": equal_cdf_areas["green_probability"],
-                    },
-                    sample_size=N,
-                )
-                method3_expected_squared_error = calculate_expected_squared_error(
-                    theoretical_probabilities={
-                        "orange": method3_areas["orange_probability"],
-                        "blue": method3_areas["blue_probability"],
-                        "green": method3_areas["green_probability"],
-                    },
-                    sample_size=N,
-                )
+                method1_probabilities = {
+                    "orange": cdf_area_probabilities["orange_probability"],
+                    "blue": cdf_area_probabilities["blue_probability"],
+                    "green": cdf_area_probabilities["green_probability"],
+                }
+                method2_probabilities = {
+                    "orange": equal_cdf_areas["orange_probability"],
+                    "blue": equal_cdf_areas["blue_probability"],
+                    "green": equal_cdf_areas["green_probability"],
+                }
+                method3_probabilities = {
+                    "orange": method3_areas["orange_probability"],
+                    "blue": method3_areas["blue_probability"],
+                    "green": method3_areas["green_probability"],
+                }
+
+                if is_mixed:
+                    method1_component_probabilities = calculate_mixed_component_probabilities(
+                        k_values=k_group,
+                        theta=theta,
+                        left_boundary=cdf_area_probabilities["orange_boundary"],
+                        right_boundary=cdf_area_probabilities["green_boundary"],
+                    )
+                    method2_component_probabilities = calculate_mixed_component_probabilities(
+                        k_values=k_group,
+                        theta=theta,
+                        left_boundary=equal_cdf_areas["orange_boundary"],
+                        right_boundary=equal_cdf_areas["green_boundary"],
+                    )
+                    method3_component_probabilities = calculate_mixed_component_probabilities(
+                        k_values=k_group,
+                        theta=theta,
+                        left_boundary=method3_areas["orange_boundary"],
+                        right_boundary=method3_areas["green_boundary"],
+                    )
+                    method1_expected_squared_error = calculate_stratified_expected_squared_error(
+                        method1_component_probabilities, sample_counts
+                    )
+                    method2_expected_squared_error = calculate_stratified_expected_squared_error(
+                        method2_component_probabilities, sample_counts
+                    )
+                    method3_expected_squared_error = calculate_stratified_expected_squared_error(
+                        method3_component_probabilities, sample_counts
+                    )
+                else:
+                    method1_expected_squared_error = calculate_expected_squared_error(
+                        theoretical_probabilities=method1_probabilities,
+                        sample_size=N,
+                    )
+                    method2_expected_squared_error = calculate_expected_squared_error(
+                        theoretical_probabilities=method2_probabilities,
+                        sample_size=N,
+                    )
+                    method3_expected_squared_error = calculate_expected_squared_error(
+                        theoretical_probabilities=method3_probabilities,
+                        sample_size=N,
+                    )
 
                 comparison_results["N"].append(int(N))
                 comparison_results["method_1"].append(
@@ -304,6 +464,7 @@ def main():
                     x=x,
                     areas=areas,
                     replay_results=replay_results,
+                    theoretical_probabilities=method1_probabilities if is_mixed else None,
                 )
 
                 # --------------------------------------------------
@@ -367,7 +528,9 @@ def main():
                 # --------------------------------------------------
 
                 save_experiment(
-                    k=k,
+                    k=k_folder,
+                    k_display=k,
+                    sample_counts=sample_counts if is_mixed else None,
                     theta=theta,
                     N=N,
                     m=m,
@@ -413,7 +576,7 @@ def main():
             save_comparison_graph(
                 figure=comparison_figure,
                 comparison_results=comparison_results,
-                k=k,
+                k=k_folder,
                 theta=theta,
             )
 
