@@ -63,6 +63,13 @@ def save_experiment(
     replay_totals,
     area_statistics,
     cdf_area_probabilities,
+    method3_distribution_figure,
+    method3_cdf_figure,
+    method3_theoretical_histogram,
+    method3_replay_histogram,
+    method3_areas,
+    method3_replay_totals,
+    method3_chi_squared,
 ):
     """
     Полностью сохраняет один эксперимент.
@@ -130,6 +137,24 @@ def save_experiment(
         k=k, theta=theta, N=N,
     )
 
+    # Метод 3 по логике расчёта; для его графиков задан префикс method_3.
+    save_method3_distribution_graph(
+        figure=method3_distribution_figure, output_dir=output_dir,
+        k=k, theta=theta, N=N,
+    )
+    save_method3_cdf_graph(
+        figure=method3_cdf_figure, output_dir=output_dir,
+        k=k, theta=theta, N=N,
+    )
+    save_method3_theoretical_histogram(
+        figure=method3_theoretical_histogram, output_dir=output_dir,
+        k=k, theta=theta, N=N,
+    )
+    save_method3_replay_histogram(
+        figure=method3_replay_histogram, output_dir=output_dir,
+        k=k, theta=theta, N=N,
+    )
+
     save_replays(
         replay_results=replay_results,
         output_dir=output_dir,
@@ -141,6 +166,7 @@ def save_experiment(
     save_chi_squared_comparison(
         method1_chi_squared=method1_chi_squared,
         method2_chi_squared=method2_chi_squared,
+        method3_chi_squared=method3_chi_squared,
         output_dir=output_dir,
         k=k,
         theta=theta,
@@ -154,6 +180,8 @@ def save_experiment(
         replays=replays,
         method1_chi_squared=method1_chi_squared,
         method2_chi_squared=method2_chi_squared,
+        method3_chi_squared=method3_chi_squared,
+        method3_areas=method3_areas,
         output_dir=output_dir,
     )
 
@@ -301,6 +329,42 @@ def save_equal_cdf_histogram(figure, output_dir, k, theta, N):
     plt.close(figure)
 
 
+
+def save_method3_distribution_graph(figure, output_dir, k, theta, N):
+    filename = os.path.join(
+        output_dir,
+        f"method_3_distribution_k_{k}_theta_{theta}_N_{N}.png",
+    )
+    figure.savefig(filename, dpi=150)
+    plt.close(figure)
+
+
+def save_method3_cdf_graph(figure, output_dir, k, theta, N):
+    filename = os.path.join(
+        output_dir,
+        f"method_3_cdf_k_{k}_theta_{theta}_N_{N}.png",
+    )
+    figure.savefig(filename, dpi=150)
+    plt.close(figure)
+
+
+def save_method3_theoretical_histogram(figure, output_dir, k, theta, N):
+    filename = os.path.join(
+        output_dir,
+        f"method_3_theoretical_probabilities_k_{k}_theta_{theta}_N_{N}.png",
+    )
+    figure.savefig(filename, dpi=150)
+    plt.close(figure)
+
+
+def save_method3_replay_histogram(figure, output_dir, k, theta, N):
+    filename = os.path.join(
+        output_dir,
+        f"method_3_replay_histograms_k_{k}_theta_{theta}_N_{N}.png",
+    )
+    figure.savefig(filename, dpi=150)
+    plt.close(figure)
+
 def save_replays(
     replay_results,
     output_dir,
@@ -337,6 +401,9 @@ def save_replays(
             "method2_orange_count",
             "method2_blue_count",
             "method2_green_count",
+            "method3_orange_count",
+            "method3_blue_count",
+            "method3_green_count",
             "total",
         ])
 
@@ -349,6 +416,9 @@ def save_replays(
                 result.get("method2_orange_count", ""),
                 result.get("method2_blue_count", ""),
                 result.get("method2_green_count", ""),
+                result.get("method3_orange_count", ""),
+                result.get("method3_blue_count", ""),
+                result.get("method3_green_count", ""),
                 result["total"],
             ])
 
@@ -356,12 +426,13 @@ def save_replays(
 def save_chi_squared_comparison(
     method1_chi_squared,
     method2_chi_squared,
+    method3_chi_squared,
     output_dir,
     k,
     theta,
     N,
 ):
-    """Сохраняет построчную детализацию расчёта chi² для двух методов."""
+    """Сохраняет построчную детализацию расчёта chi² для всех методов."""
     filename = os.path.join(
         output_dir,
         f"chi_squared_comparison_k_{k}_theta_{theta}_N_{N}.csv",
@@ -374,6 +445,7 @@ def save_chi_squared_comparison(
     methods = (
         ("Метод 1", method1_chi_squared),
         ("Метод 2", method2_chi_squared),
+        ("Метод 3", method3_chi_squared),
     )
 
     with open(filename, "w", newline="", encoding="utf-8") as file:
@@ -423,9 +495,11 @@ def save_report(
     replays,
     method1_chi_squared,
     method2_chi_squared,
+    method3_chi_squared,
+    method3_areas,
     output_dir,
 ):
-    """Сохраняет краткий Markdown-отчёт только с двумя сравнениями."""
+    """Сохраняет Markdown-отчёт по всем трём методам."""
     report_file = os.path.join(
         output_dir,
         f"report_k_{k}_theta_{theta}_N_{N}.md",
@@ -434,6 +508,7 @@ def save_report(
     methods = (
         ("Метод 1", method1_chi_squared),
         ("Метод 2", method2_chi_squared),
+        ("Метод 3", method3_chi_squared),
     )
     area_labels = {
         "orange": "Оранжевая",

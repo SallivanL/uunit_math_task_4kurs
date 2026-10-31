@@ -5,7 +5,9 @@ from calc import (
     calculate_areas,
     calculate_cdf_area_probabilities,
     calculate_equal_cdf_areas,
+    calculate_method3_equal_x_areas,
     calculate_method2_replay_totals,
+    calculate_method3_replay_totals,
     calculate_chi_squared_comparison,
     run_replays,
     calculate_replay_totals,
@@ -23,6 +25,10 @@ from plotting import (
     plot_cdf_histogram,
     plot_equal_cdf,
     plot_equal_cdf_histogram,
+    plot_method3_distribution,
+    plot_method3_cdf,
+    plot_method3_theoretical_histogram,
+    plot_method3_replays_histogram,
 )
 
 from report import clear_results, save_experiment
@@ -35,11 +41,10 @@ def main():
     k_values = [
         1,
         8,
-        30,
     ]
 
     theta_values = [1]
-    N_values = [10, 100, 1000]
+    N_values = [20, 100, 500, 1000]
 
     random_seed = None
 
@@ -50,7 +55,6 @@ def main():
     for k in k_values:
         for theta in theta_values:
             for N in N_values:
-
                 # --------------------------------------------------
                 # Расчёт плотностей
                 # --------------------------------------------------
@@ -144,7 +148,28 @@ def main():
                 )
 
                 # --------------------------------------------------
-                # Проведение replay: оба метода используют одни выборки
+                # Метод 3: деление диапазона x на три равных интервала.
+                # Для изображений используется префикс method_3.
+                # --------------------------------------------------
+
+                method3_areas = calculate_method3_equal_x_areas(
+                    k=k, theta=theta, x=x,
+                )
+                method3_distribution_figure = plot_method3_distribution(
+                    x=x, f=f, f_min=f_min, f_max=f_max, method3_areas=method3_areas,
+                    k=k, theta=theta, N=N,
+                )
+                method3_cdf_figure = plot_method3_cdf(
+                    x=x, method3_areas=method3_areas,
+                    k=k, theta=theta, N=N,
+                )
+                method3_theoretical_histogram = plot_method3_theoretical_histogram(
+                    method3_areas=method3_areas,
+                    k=k, theta=theta, N=N,
+                )
+
+                # --------------------------------------------------
+                # Проведение replay: все методы используют одни выборки
                 # --------------------------------------------------
 
                 replay_results = run_replays(
@@ -156,6 +181,7 @@ def main():
                     areas=areas,
                     rng=rng,
                     equal_cdf_areas=equal_cdf_areas,
+                    method3_areas=method3_areas,
                 )
 
                 # --------------------------------------------------
@@ -168,10 +194,13 @@ def main():
                 method2_replay_totals = calculate_method2_replay_totals(
                     replay_results
                 )
+                method3_replay_totals = calculate_method3_replay_totals(
+                    replay_results
+                )
 
                 # --------------------------------------------------
                 # Сравнение теоретических и экспериментальных
-                # вероятностей по формуле chi² для обоих методов
+                # вероятностей по формуле chi² для трёх методов
                 # --------------------------------------------------
 
                 method1_chi_squared = calculate_chi_squared_comparison(
@@ -197,6 +226,19 @@ def main():
                         "orange": method2_replay_totals["orange_count"],
                         "blue": method2_replay_totals["blue_count"],
                         "green": method2_replay_totals["green_count"],
+                    },
+                )
+
+                method3_chi_squared = calculate_chi_squared_comparison(
+                    theoretical_probabilities={
+                        "orange": method3_areas["orange_probability"],
+                        "blue": method3_areas["blue_probability"],
+                        "green": method3_areas["green_probability"],
+                    },
+                    observed_counts={
+                        "orange": method3_replay_totals["orange_count"],
+                        "blue": method3_replay_totals["blue_count"],
+                        "green": method3_replay_totals["green_count"],
                     },
                 )
 
@@ -262,8 +304,15 @@ def main():
                     theta=theta,
                 )
 
+                method3_replay_histogram = plot_method3_replays_histogram(
+                    replay_results=replay_results,
+                    N=N,
+                    k=k,
+                    theta=theta,
+                )
+
                 # --------------------------------------------------
-                # Сохранение результатов
+                # Передача рассчитанных результатов и графиков в report.py
                 # --------------------------------------------------
 
                 save_experiment(
@@ -294,6 +343,13 @@ def main():
                     cdf_area_probabilities=(
                         cdf_area_probabilities
                     ),
+                    method3_distribution_figure=method3_distribution_figure,
+                    method3_cdf_figure=method3_cdf_figure,
+                    method3_theoretical_histogram=method3_theoretical_histogram,
+                    method3_replay_histogram=method3_replay_histogram,
+                    method3_areas=method3_areas,
+                    method3_replay_totals=method3_replay_totals,
+                    method3_chi_squared=method3_chi_squared,
                 )
 
 

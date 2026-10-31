@@ -364,6 +364,88 @@ def calculate_equal_cdf_areas(k, theta, x):
     }
 
 
+
+def calculate_method3_equal_x_areas(k, theta, x):
+    """Метод 3: делит диапазон x графика на три равных по длине интервала.
+
+    Файлы графиков этого метода используют префикс method_3.
+    Теоретические вероятности рассчитываются через исходную CDF Gamma.
+    """
+    if k <= 0:
+        raise ValueError("k должно быть > 0")
+    if theta <= 0:
+        raise ValueError("theta должно быть > 0")
+
+    x_values = np.asarray(x, dtype=float)
+    if x_values.ndim != 1 or x_values.size < 2:
+        raise ValueError("x должен содержать как минимум две точки")
+    if not np.all(np.isfinite(x_values)):
+        raise ValueError("Все значения x должны быть конечными")
+    if np.any(np.diff(x_values) <= 0):
+        raise ValueError("Значения x должны строго возрастать")
+
+    x_min = float(x_values[0])
+    x_max = float(x_values[-1])
+    if x_max <= x_min:
+        raise ValueError("Верхняя граница x должна быть больше нижней")
+
+    interval_width = (x_max - x_min) / 3.0
+    boundary_1 = x_min + interval_width
+    boundary_2 = x_min + 2.0 * interval_width
+
+    cdf_1 = float(gamma.cdf(boundary_1, a=k, scale=theta))
+    cdf_2 = float(gamma.cdf(boundary_2, a=k, scale=theta))
+    probabilities = {
+        "orange_probability": cdf_1,
+        "blue_probability": cdf_2 - cdf_1,
+        "green_probability": 1.0 - cdf_2,
+    }
+    probability_sum = sum(probabilities.values())
+
+    if any(not np.isfinite(value) or value < 0 for value in probabilities.values()):
+        raise RuntimeError("Теоретические вероятности метода по равным интервалам x некорректны")
+    if not np.isclose(probability_sum, 1.0, atol=1e-12):
+        raise RuntimeError("Теоретические вероятности метода по равным интервалам x не дают сумму 1")
+
+    return {
+        "x_min": x_min,
+        "x_max": x_max,
+        "orange_boundary": float(boundary_1),
+        "green_boundary": float(boundary_2),
+        "cdf_orange": cdf_1,
+        "cdf_green": cdf_2,
+        "cdf_values": gamma.cdf(x_values, a=k, scale=theta),
+        **probabilities,
+        "total": float(probability_sum),
+    }
+
+
+def calculate_method3_replay_totals(replay_results):
+    """Суммирует фактические количества областей метода с префиксом method3."""
+    if not replay_results:
+        raise ValueError("replay_results не должен быть пустым")
+
+    keys = ("method3_orange_count", "method3_blue_count", "method3_green_count")
+    if any(any(key not in result for key in keys) for result in replay_results):
+        raise ValueError("В replay_results отсутствуют счётчики метода 4")
+
+    counts = [sum(int(result[key]) for result in replay_results) for key in keys]
+    total = sum(int(result["total"]) for result in replay_results)
+    if total <= 0:
+        raise ValueError("Общее количество элементов должно быть больше нуля")
+    if sum(counts) != total:
+        raise RuntimeError("Сумма областей метода 4 не равна общему количеству элементов")
+
+    return {
+        "orange_count": counts[0],
+        "blue_count": counts[1],
+        "green_count": counts[2],
+        "orange_ratio": counts[0] / total,
+        "blue_ratio": counts[1] / total,
+        "green_ratio": counts[2] / total,
+        "total": total,
+    }
+
 def calculate_method2_replay_totals(replay_results):
     """Суммарные фактические количества точек для метода 2."""
     if not replay_results:
@@ -497,9 +579,10 @@ def run_replays(
     areas,
     rng,
     equal_cdf_areas=None,
+    method3_areas=None,
 ):
     """
-    Выполняет replay; оба метода используют одну и ту же выборку.
+    Выполняет replay; все методы используют одну и ту же выборку.
     """
 
     if replays <= 0:
@@ -533,12 +616,25 @@ def run_replays(
             if sum(method2_counts.values()) != len(sample):
                 raise RuntimeError("Метод 2 не классифицировал все элементы выборки.")
 
+        method3_counts = {}
+        if method3_areas is not None:
+            b1 = method3_areas["orange_boundary"]
+            b2 = method3_areas["green_boundary"]
+            method3_counts = {
+                "method3_orange_count": int(np.sum(sample <= b1)),
+                "method3_blue_count": int(np.sum((sample > b1) & (sample < b2))),
+                "method3_green_count": int(np.sum(sample >= b2)),
+            }
+            if sum(method3_counts.values()) != len(sample):
+                raise RuntimeError("Метод 4 не классифицировал все элементы выборки")
+
         results.append({
             "replay": replay,
             "orange_count": statistics["orange"]["count"],
             "blue_count": statistics["blue"]["count"],
             "green_count": statistics["green"]["count"],
             **method2_counts,
+            **method3_counts,
             "total": statistics["total"],
         })
 
