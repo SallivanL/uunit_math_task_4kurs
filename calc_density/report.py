@@ -610,8 +610,12 @@ def save_report(
 
 
 def save_comparison_graph(figure, comparison_results, k, theta):
-    """Сохраняет сводный график и CSV с данными в корень results/k_X/."""
-    expected_keys = ("method_1", "method_2", "method_3")
+    """Сохраняет сводный график χ² и CSV в корень results/k_X/."""
+    expected_keys = (
+        "method_1_chi_squared",
+        "method_2_chi_squared",
+        "method_3_chi_squared",
+    )
     if "N" not in comparison_results:
         raise ValueError("В comparison_results отсутствует список N")
     row_count = len(comparison_results["N"])
@@ -643,15 +647,15 @@ def save_comparison_graph(figure, comparison_results, k, theta):
         writer = csv.writer(file)
         writer.writerow([
             "N",
-            "method_1_expected_squared_error_M_X2",
-            "method_2_expected_squared_error_M_X2",
-            "method_3_expected_squared_error_M_X2",
+            "method_1_chi_squared",
+            "method_2_chi_squared",
+            "method_3_chi_squared",
         ])
 
         for index in range(row_count):
             writer.writerow([
                 comparison_results["N"][index],
-                f"{comparison_results['method_1'][index]:.12g}",
-                f"{comparison_results['method_2'][index]:.12g}",
-                f"{comparison_results['method_3'][index]:.12g}",
+                f"{comparison_results['method_1_chi_squared'][index]:.12g}",
+                f"{comparison_results['method_2_chi_squared'][index]:.12g}",
+                f"{comparison_results['method_3_chi_squared'][index]:.12g}",
             ])

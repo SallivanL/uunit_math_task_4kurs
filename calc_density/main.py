@@ -9,7 +9,6 @@ from calc import (
     calculate_method2_replay_totals,
     calculate_method3_replay_totals,
     calculate_chi_squared_comparison,
-    calculate_expected_squared_error,
     run_replays,
     calculate_replay_totals,
     calculate_area_statistics,
@@ -20,8 +19,6 @@ from calc import (
     calculate_mixed_cdf_area_probabilities,
     calculate_mixed_equal_cdf_areas,
     calculate_mixed_method3_equal_x_areas,
-    calculate_mixed_component_probabilities,
-    calculate_stratified_expected_squared_error,
     run_mixed_replays,
 )
 
@@ -136,12 +133,12 @@ def main():
         k_folder = "_".join(str(value) for value in k_group)
         is_mixed = len(k_group) > 1
         for theta in theta_values:
-            # Аналитические значения M[X²] накапливаются отдельно для каждой пары (k, theta).
+            # Итоговые значения χ² накапливаются отдельно для каждой пары (k, theta).
             comparison_results = {
                 "N": [],
-                "method_1": [],
-                "method_2": [],
-                "method_3": [],
+                "method_1_chi_squared": [],
+                "method_2_chi_squared": [],
+                "method_3_chi_squared": [],
             }
 
             for N in N_values:
@@ -380,8 +377,23 @@ def main():
                 )
 
                 # --------------------------------------------------
-                # Аналитическое математическое ожидание квадрата ошибки
-                # M[X²] = sum_j p_j * (1 - p_j) / N для каждого метода.
+                # Сбор уже рассчитанных значений χ² для общего графика.
+                # Используются те же итоги, которые передаются в report.md.
+                # --------------------------------------------------
+
+                comparison_results["N"].append(int(N))
+                comparison_results["method_1_chi_squared"].append(
+                    method1_chi_squared["chi_squared"]
+                )
+                comparison_results["method_2_chi_squared"].append(
+                    method2_chi_squared["chi_squared"]
+                )
+                comparison_results["method_3_chi_squared"].append(
+                    method3_chi_squared["chi_squared"]
+                )
+
+                # --------------------------------------------------
+                # Статистика областей
                 # --------------------------------------------------
 
                 method1_probabilities = {
@@ -389,73 +401,6 @@ def main():
                     "blue": cdf_area_probabilities["blue_probability"],
                     "green": cdf_area_probabilities["green_probability"],
                 }
-                method2_probabilities = {
-                    "orange": equal_cdf_areas["orange_probability"],
-                    "blue": equal_cdf_areas["blue_probability"],
-                    "green": equal_cdf_areas["green_probability"],
-                }
-                method3_probabilities = {
-                    "orange": method3_areas["orange_probability"],
-                    "blue": method3_areas["blue_probability"],
-                    "green": method3_areas["green_probability"],
-                }
-
-                if is_mixed:
-                    method1_component_probabilities = calculate_mixed_component_probabilities(
-                        k_values=k_group,
-                        theta=theta,
-                        left_boundary=cdf_area_probabilities["orange_boundary"],
-                        right_boundary=cdf_area_probabilities["green_boundary"],
-                    )
-                    method2_component_probabilities = calculate_mixed_component_probabilities(
-                        k_values=k_group,
-                        theta=theta,
-                        left_boundary=equal_cdf_areas["orange_boundary"],
-                        right_boundary=equal_cdf_areas["green_boundary"],
-                    )
-                    method3_component_probabilities = calculate_mixed_component_probabilities(
-                        k_values=k_group,
-                        theta=theta,
-                        left_boundary=method3_areas["orange_boundary"],
-                        right_boundary=method3_areas["green_boundary"],
-                    )
-                    method1_expected_squared_error = calculate_stratified_expected_squared_error(
-                        method1_component_probabilities, sample_counts
-                    )
-                    method2_expected_squared_error = calculate_stratified_expected_squared_error(
-                        method2_component_probabilities, sample_counts
-                    )
-                    method3_expected_squared_error = calculate_stratified_expected_squared_error(
-                        method3_component_probabilities, sample_counts
-                    )
-                else:
-                    method1_expected_squared_error = calculate_expected_squared_error(
-                        theoretical_probabilities=method1_probabilities,
-                        sample_size=N,
-                    )
-                    method2_expected_squared_error = calculate_expected_squared_error(
-                        theoretical_probabilities=method2_probabilities,
-                        sample_size=N,
-                    )
-                    method3_expected_squared_error = calculate_expected_squared_error(
-                        theoretical_probabilities=method3_probabilities,
-                        sample_size=N,
-                    )
-
-                comparison_results["N"].append(int(N))
-                comparison_results["method_1"].append(
-                    method1_expected_squared_error
-                )
-                comparison_results["method_2"].append(
-                    method2_expected_squared_error
-                )
-                comparison_results["method_3"].append(
-                    method3_expected_squared_error
-                )
-
-                # --------------------------------------------------
-                # Статистика областей
-                # --------------------------------------------------
 
                 area_statistics = calculate_area_statistics(
                     k=k,
@@ -569,9 +514,9 @@ def main():
             # После обработки всех N строим один сводный график для k и theta.
             comparison_figure = plot_comparison_three_methods(
                 N_values=comparison_results["N"],
-                method1_values=comparison_results["method_1"],
-                method2_values=comparison_results["method_2"],
-                method3_values=comparison_results["method_3"],
+                method1_chi_squared_values=comparison_results["method_1_chi_squared"],
+                method2_chi_squared_values=comparison_results["method_2_chi_squared"],
+                method3_chi_squared_values=comparison_results["method_3_chi_squared"],
             )
             save_comparison_graph(
                 figure=comparison_figure,
