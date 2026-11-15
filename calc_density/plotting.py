@@ -1,828 +1,220 @@
-import matplotlib.pyplot as plt
+"""Графики из готовых результатов эксперимента."""
 
+from matplotlib.collections import PolyCollection
+from matplotlib.figure import Figure
+import numpy as np
 
-def plot_three_densities(
-    x,
-    f,
-    f_min,
-    f_max,
-    areas,
-    k,
-    theta,
-    N,
-):
-    """
-    Строит три плотности:
 
-        f_max(x) — максимум
-        f_min(x) — минимум
-        f(x)     — исходное распределение
+COLORS = ('#d98b31', '#438bd0', '#42966d')
+AREA_NAMES = ('Оранжевая', 'Синяя', 'Зелёная')
 
-    Области по x:
 
-        ОРАНЖЕВАЯ | СИНЯЯ | ЗЕЛЁНАЯ
-    """
+def _caption(experiment, alpha=None):
+    k = ', '.join(f'{value:g}' for value in experiment.k_values)
+    parameters = f'k={k}, θ={experiment.theta:g}, N={experiment.N}'
+    noise = 'чистая модель' if alpha is None else f'α={alpha:g}'
+    return f'{parameters}, {noise}\nГраницы при N_ref={experiment.N_ref}'
 
-    figure = plt.figure(
-        figsize=(11, 7)
-    )
 
-    plt.plot(
-        x,
-        f_max,
-        linewidth=2,
-        label=r"$f_{\max}(x)$ — максимум",
-    )
-
-    plt.plot(
-        x,
-        f_min,
-        linewidth=2,
-        label=r"$f_{\min}(x)$ — минимум",
-    )
-
-    plt.plot(
-        x,
-        f,
-        linewidth=2,
-        label=r"$f(x)$ — исходное распределение",
-    )
-
-    orange_area = areas["orange"]
-    blue_area = areas["blue"]
-    green_area = areas["green"]
-
-    orange_left = orange_area["left"]
-    orange_right = orange_area["right"]
-
-    plt.fill_between(
-        x[
-            orange_left:
-            orange_right + 1
-        ],
-        f_min[
-            orange_left:
-            orange_right + 1
-        ],
-        alpha=0.25,
-    )
-
-    blue_left = blue_area["left"]
-    blue_right = blue_area["right"]
-
-    plt.fill_between(
-        x[
-            blue_left:
-            blue_right + 1
-        ],
-        f[
-            blue_left:
-            blue_right + 1
-        ],
-        alpha=0.25,
-    )
-
-    green_left = green_area["left"]
-    green_right = green_area["right"]
-
-    plt.fill_between(
-        x[
-            green_left:
-            green_right + 1
-        ],
-        f_max[
-            green_left:
-            green_right + 1
-        ],
-        alpha=0.25,
-    )
-
-    plt.title(
-        f"Сравнение распределений: "
-        f"k={k}, θ={theta}, N={N}",
-        fontsize=15,
-    )
-
-    plt.xlabel(
-        "x",
-        fontsize=13,
-    )
-
-    plt.ylabel(
-        "Плотность",
-        fontsize=13,
-    )
-
-    plt.grid(
-        True,
-        alpha=0.25,
-    )
-
-    plt.legend(
-        fontsize=11,
-    )
-
-    plt.tight_layout()
-
-    return figure
-
-
-def plot_cdf(
-    x,
-    cdf_area_probabilities,
-    areas,
-    k,
-    theta,
-    N,
-):
-    """
-    Строит функцию распределения F(x) исходного
-    Gamma-распределения и отмечает на ней те же
-    две границы, которые разделяют три области.
-
-    Для каждой границы проводится вертикальная
-    проекция до оси X и горизонтальная проекция
-    до значения F(x).
-
-    Точки:
-
-        x1 = граница оранжевой области
-        x2 = граница зелёной области
-
-        F(x1)
-        F(x2)
-    """
-
-    figure = plt.figure(
-        figsize=(11, 7)
-    )
-
-    x1 = cdf_area_probabilities[
-        "orange_boundary"
-    ]
-
-    x2 = cdf_area_probabilities[
-        "green_boundary"
-    ]
-
-    cdf_values = cdf_area_probabilities.get(
-        "cdf_values"
-    )
-
-    if cdf_values is None:
-        raise ValueError(
-            "cdf_values отсутствует в результатах "
-            "расчёта CDF."
-        )
-
-    cdf_x1 = cdf_area_probabilities[
-        "cdf_orange"
-    ]
-
-    cdf_x2 = cdf_area_probabilities[
-        "cdf_green"
-    ]
-
-    plt.plot(
-        x,
-        cdf_values,
-        linewidth=2,
-        label=r"$F(x)$ — функция распределения",
-    )
-
-    plt.scatter(
-        [x1, x2],
-        [cdf_x1, cdf_x2],
-        s=55,
-        zorder=5,
-        label="Точки границ областей",
-    )
-
-    plt.vlines(
-        x1,
-        0,
-        cdf_x1,
-        linestyles="--",
-        linewidth=1.5,
-    )
-
-    plt.vlines(
-        x2,
-        0,
-        cdf_x2,
-        linestyles="--",
-        linewidth=1.5,
-    )
-
-    plt.hlines(
-        cdf_x1,
-        0,
-        x1,
-        linestyles="--",
-        linewidth=1.5,
-    )
-
-    plt.hlines(
-        cdf_x2,
-        0,
-        x2,
-        linestyles="--",
-        linewidth=1.5,
-    )
-
-    plt.annotate(
-        f"F(x₁) = {cdf_x1:.4f}",
-        xy=(x1, cdf_x1),
-        xytext=(10, 10),
-        textcoords="offset points",
-        fontsize=11,
-    )
-
-    plt.annotate(
-        f"F(x₂) = {cdf_x2:.4f}",
-        xy=(x2, cdf_x2),
-        xytext=(10, -25),
-        textcoords="offset points",
-        fontsize=11,
-    )
-
-    plt.annotate(
-        f"x₁ = {x1:.4f}",
-        xy=(x1, 0),
-        xytext=(5, 8),
-        textcoords="offset points",
-        fontsize=10,
-    )
-
-    plt.annotate(
-        f"x₂ = {x2:.4f}",
-        xy=(x2, 0),
-        xytext=(5, 8),
-        textcoords="offset points",
-        fontsize=10,
-    )
-
-    plt.title(
-        "Функция распределения F(x) "
-        f"с границами областей: k={k}, θ={theta}, N={N}",
-        fontsize=15,
-    )
-
-    plt.xlabel(
-        "x",
-        fontsize=13,
-    )
-
-    plt.ylabel(
-        "F(x)",
-        fontsize=13,
-    )
-
-    plt.ylim(
-        0,
-        1.05,
-    )
-
-    plt.grid(
-        True,
-        alpha=0.25,
-    )
-
-    plt.legend(
-        fontsize=11,
-    )
-
-    plt.tight_layout()
-
-    return figure
-
-
-def plot_replay_histogram(
-    average_replay_ratios,
-    k,
-    theta,
-    N,
-    replays,
-):
-    """
-    Строит одну итоговую гистограмму.
-
-    Для каждой из трёх областей рассчитывается
-    средняя доля точек n / N по всем replay.
-
-    Получается ровно три столбца:
-
-        Область 1 → mean(n1 / N)
-        Область 2 → mean(n2 / N)
-        Область 3 → mean(n3 / N)
-
-    Сумма высот трёх столбцов равна 1.
-    """
-
-    figure = plt.figure(
-        figsize=(9, 7)
-    )
-
-    values = [
-        average_replay_ratios["orange_ratio"],
-        average_replay_ratios["blue_ratio"],
-        average_replay_ratios["green_ratio"],
-    ]
-
-    labels = [
-        "Область 1",
-        "Область 2",
-        "Область 3",
-    ]
-
-    bars = plt.bar(
-        labels,
-        values,
-        width=0.6,
-    )
-
-    for bar, value in zip(bars, values):
-        plt.text(
-            bar.get_x()
-            + bar.get_width() / 2,
-            value,
-            f"{value:.4f}",
-            ha="center",
-            va="bottom",
-            fontsize=11,
-        )
-
-    plt.ylim(
-        0,
-        1.05,
-    )
-
-    plt.ylabel(
-        "Средняя доля точек n / N",
-        fontsize=13,
-    )
-
-    plt.xlabel(
-        "Область",
-        fontsize=13,
-    )
-
-    plt.title(
-        "Среднее распределение точек по областям: "
-        f"k={k}, θ={theta}, N={N}, "
-        f"replays={replays}",
-        fontsize=15,
-    )
-
-    plt.grid(
-        axis="y",
-        alpha=0.25,
-    )
-
-    plt.tight_layout()
-
-    return figure
-
-
-def plot_replays_histogram(replay_results, N, k, theta):
-    """Строит один рисунок со столбцами всех replay.
-
-    Для каждого replay отображаются три столбца: оранжевая, синяя
-    и зелёная области. Высота каждого столбца равна count / N,
-    а подпись показывает фактическое количество точек.
-    Функция только строит и возвращает figure, не сохраняет файлы.
-    """
-    if N <= 0:
-        raise ValueError("N должно быть > 0")
-    if not replay_results:
-        raise ValueError("Список replay_results пуст")
-
-    replay_numbers = [int(result["replay"]) for result in replay_results]
-    orange = [int(result["orange_count"]) for result in replay_results]
-    blue = [int(result["blue_count"]) for result in replay_results]
-    green = [int(result["green_count"]) for result in replay_results]
-
-    for replay_number, counts in zip(replay_numbers, zip(orange, blue, green)):
-        if sum(counts) != N:
-            raise ValueError(
-                f"Сумма точек replay {replay_number} не равна N: "
-                f"{sum(counts)} != {N}"
-            )
-
-    import numpy as np
-
-    x = np.arange(len(replay_results))
-    width = 0.24
-    series = [
-        (orange, "Оранжевая", "#E99A37", -width),
-        (blue, "Синяя", "#438BD0", 0),
-        (green, "Зелёная", "#42966D", width),
-    ]
-
-    figure_width = max(11, len(replay_results) * 1.1)
-    figure, ax = plt.subplots(figsize=(figure_width, 7))
-
-    for counts, label, color, offset in series:
-        ratios = [count / N for count in counts]
-        bars = ax.bar(x + offset, ratios, width=width, label=label, color=color)
-        for bar, count, ratio in zip(bars, counts, ratios):
-            y = ratio / 2 if ratio > 0 else 0.012
-            ax.text(
-                bar.get_x() + bar.get_width() / 2,
-                y,
-                str(count),
-                ha="center",
-                va="center" if ratio > 0 else "bottom",
-                fontsize=9,
-                fontweight="bold",
-                color="white" if ratio >= 0.12 else "black",
-            )
-
-    ax.set_xticks(x)
-    ax.set_xticklabels([str(number) for number in replay_numbers])
-    ax.set_ylim(0, 1.08)
-    ax.set_xlabel("Номер replay", fontsize=13)
-    ax.set_ylabel("Доля точек n / N", fontsize=13)
-    ax.set_title(
-        f"Распределение точек по областям для всех replay: "
-        f"k={k}, θ={theta}, N={N}",
-        fontsize=14,
-    )
-    ax.legend(title="Область")
-    ax.grid(axis="y", alpha=0.25)
+def _axes(title, xlabel, ylabel):
+    figure = Figure(figsize=(10, 5.8), layout='constrained')
+    ax = figure.subplots()
+    ax.set(title=title, xlabel=xlabel, ylabel=ylabel)
+    ax.grid(axis='y', alpha=0.24)
     ax.set_axisbelow(True)
-    figure.tight_layout()
+    return figure, ax
+
+
+def _mark_boundaries(ax, boundaries):
+    for boundary in boundaries:
+        ax.axvline(boundary, color='#444444', linestyle='--', linewidth=1)
+        ax.annotate(f'{boundary:.5g}', xy=(boundary, 0.98), xycoords=('data', 'axes fraction'),
+                    xytext=(4, 0), textcoords='offset points', va='top', fontsize=9)
+
+
+def plot_densities(experiment, method):
+    part = experiment.partitions[method - 1]
+    curves = experiment.curves
+    title = {
+        1: f'Метод 1 · площади хвостов = {experiment.koef:.0%}',
+        3: 'Метод 3 · равные интервалы расчётного диапазона',
+    }[method]
+    figure, ax = _axes(f'{title}\n{_caption(experiment)}', 'x', 'Плотность')
+    x = curves.x
+    ax.plot(x, curves.maximum_density, label=r'$f_{\max}(x)$ — максимум')
+    ax.plot(x, curves.minimum_density, label=r'$f_{\min}(x)$ — минимум')
+    ax.plot(x, curves.density, label=r'$f(x)$ — исходное распределение')
+    a, b = part.boundaries
+    masks = (x <= a, (x >= a) & (x <= b), x >= b)
+    layers = (curves.minimum_density, curves.density, curves.maximum_density)
+    if method == 3:
+        layers = (curves.density,) * 3
+    for mask, density, color in zip(masks, layers, COLORS):
+        ax.fill_between(x, 0, density, where=mask, color=color, alpha=0.24)
+    _mark_boundaries(ax, part.boundaries)
+    ax.set(xlim=(0, part.x_max or x[-1]), ylim=(0, None))
+    ax.legend(loc='center right')
     return figure
 
 
-def plot_cdf_histogram(
-    cdf_area_probabilities,
-    k,
-    theta,
-    N,
-):
-    """
-    Строит вторую гистограмму на основе CDF.
-
-    Высоты столбцов:
-
-        Область 1 = F(x1)
-        Область 2 = F(x2) - F(x1)
-        Область 3 = 1 - F(x2)
-
-    В отличие от replay-гистограммы, здесь используются
-    теоретические вероятности, рассчитанные непосредственно
-    через F(x).
-    """
-
-    figure = plt.figure(
-        figsize=(9, 7)
-    )
-
-    values = [
-        cdf_area_probabilities["orange_probability"],
-        cdf_area_probabilities["blue_probability"],
-        cdf_area_probabilities["green_probability"],
-    ]
-
-    labels = [
-        "Область 1",
-        "Область 2",
-        "Область 3",
-    ]
-
-    bars = plt.bar(
-        labels,
-        values,
-        width=0.6,
-    )
-
-    for bar, value in zip(bars, values):
-        plt.text(
-            bar.get_x()
-            + bar.get_width() / 2,
-            value,
-            f"{value:.4f}",
-            ha="center",
-            va="bottom",
-            fontsize=11,
-        )
-
-    plt.ylim(
-        0,
-        1.05,
-    )
-
-    plt.ylabel(
-        "Теоретическая вероятность",
-        fontsize=13,
-    )
-
-    plt.xlabel(
-        "Область",
-        fontsize=13,
-    )
-
-    plt.title(
-        "Теоретическое распределение по областям "
-        f"через F(x): k={k}, θ={theta}, N={N}",
-        fontsize=15,
-    )
-
-    plt.grid(
-        axis="y",
-        alpha=0.25,
-    )
-
-    plt.tight_layout()
-
+def plot_cdf(experiment, method):
+    part = experiment.partitions[method - 1]
+    curves = experiment.curves
+    figure, ax = _axes(f'Метод {method} · границы на CDF\n{_caption(experiment)}', 'x', 'F(x)')
+    ax.plot(np.r_[0, curves.x], np.r_[0, curves.cdf])
+    for boundary, level in zip(part.boundaries, part.cdf_levels):
+        ax.plot([0, boundary, boundary], [level, level, 0], '--', color='#888888', linewidth=1)
+        ax.scatter(boundary, level, color='#333333', zorder=3)
+    _mark_boundaries(ax, part.boundaries)
+    ax.set(xlim=(0, part.x_max or curves.x[-1]), ylim=(0, 1.08))
     return figure
 
 
-def plot_equal_cdf(x, equal_cdf_areas, k, theta, N):
-    """CDF с границами метода 2: F(x)=1/3 и F(x)=2/3."""
-    figure = plt.figure(figsize=(11, 7))
-    x1 = equal_cdf_areas["orange_boundary"]
-    x2 = equal_cdf_areas["green_boundary"]
-    y1 = equal_cdf_areas["cdf_orange"]
-    y2 = equal_cdf_areas["cdf_green"]
-    plt.plot(x, equal_cdf_areas["cdf_values"], linewidth=2,
-             label=r"$F(x)$ — функция распределения")
-    plt.scatter([x1, x2], [y1, y2], s=55, zorder=5,
-                label="Границы равных областей по F(x)")
-    for boundary, level in ((x1, y1), (x2, y2)):
-        plt.vlines(boundary, 0, level, linestyles="--", linewidth=1.5)
-        plt.hlines(level, 0, boundary, linestyles="--", linewidth=1.5)
-    plt.annotate(f"F(x₁) = {y1:.4f}", xy=(x1, y1), xytext=(10, 10),
-                 textcoords="offset points", fontsize=11)
-    plt.annotate(f"F(x₂) = {y2:.4f}", xy=(x2, y2), xytext=(10, -25),
-                 textcoords="offset points", fontsize=11)
-    plt.annotate(f"x₁ = {x1:.4f}", xy=(x1, 0), xytext=(5, 8),
-                 textcoords="offset points", fontsize=10)
-    plt.annotate(f"x₂ = {x2:.4f}", xy=(x2, 0), xytext=(5, 8),
-                 textcoords="offset points", fontsize=10)
-    plt.title(f"CDF: три равные области по F(x): k={k}, θ={theta}, N={N}", fontsize=15)
-    plt.xlabel("x", fontsize=13)
-    plt.ylabel("F(x)", fontsize=13)
-    plt.ylim(0, 1.05)
-    plt.grid(True, alpha=0.25)
-    plt.legend(fontsize=11)
-    plt.tight_layout()
+def plot_probabilities(experiment, method, scenario=None):
+    part = experiment.partitions[method - 1]
+    caption = _caption(experiment, None if scenario is None else scenario.alpha)
+    figure, ax = _axes(f'Метод {method} · доли наблюдений\n{caption}', 'Область', 'Доля')
+    positions = np.arange(3)
+    if scenario is None:
+        ax.bar(positions, part.probabilities, color=COLORS, label='Чистая теория')
+    else:
+        result = scenario.methods[method - 1]
+        shares = [area.p_hat for area in result.areas]
+        ax.bar(positions - 0.18, part.probabilities, 0.36, color='#a0a9b4', label='Чистая теория')
+        ax.bar(positions + 0.18, shares, 0.36, color=COLORS, label='Фактические доли')
+    ax.set_xticks(positions, AREA_NAMES)
+    ax.set_ylim(0, 1.06)
+    ax.legend()
     return figure
 
 
-def plot_equal_cdf_histogram(equal_cdf_areas, k, theta, N):
-    """Теоретическая гистограмма вероятностей метода 2."""
-    figure = plt.figure(figsize=(9, 7))
-    values = [equal_cdf_areas["orange_probability"],
-              equal_cdf_areas["blue_probability"],
-              equal_cdf_areas["green_probability"]]
-    labels = ["Область 1", "Область 2", "Область 3"]
-    bars = plt.bar(labels, values, width=0.6)
-    for bar, value in zip(bars, values):
-        plt.text(bar.get_x() + bar.get_width() / 2, value, f"{value:.4f}",
-                 ha="center", va="bottom", fontsize=11)
-    plt.ylim(0, 1.05)
-    plt.ylabel("Теоретическая вероятность", fontsize=13)
-    plt.xlabel("Область", fontsize=13)
-    plt.title(f"Теоретические вероятности метода 2: k={k}, θ={theta}, N={N}", fontsize=15)
-    plt.grid(axis="y", alpha=0.25)
-    plt.tight_layout()
+def plot_replay_histogram(experiment, scenario):
+    """Средние фактические доли трёх областей первого метода."""
+    values = [area.p_hat for area in scenario.methods[0].areas]
+    figure, ax = _axes(
+        f'Среднее распределение точек по областям\n{_caption(experiment, scenario.alpha)}, '
+        f'повторений={len(experiment.clean_samples)}',
+        'Область', 'Средняя доля точек n / N',
+    )
+    bars = ax.bar(('Область 1', 'Область 2', 'Область 3'), values, color=COLORS, width=0.6)
+    ax.bar_label(bars, fmt='%.4f', padding=3)
+    ax.set_ylim(0, 1.08)
     return figure
 
 
-def plot_method2_replays_histogram(replay_results, N, k, theta):
-    """Строит единый рисунок с гистограммами всех replay для метода 2."""
-    if N <= 0:
-        raise ValueError("N должно быть > 0")
-    if not replay_results:
-        raise ValueError("Список replay_results пуст")
-
-    replay_numbers = [int(result["replay"]) for result in replay_results]
-    keys = ("method2_orange_count", "method2_blue_count", "method2_green_count")
-    labels = ("Оранжевая", "Синяя", "Зелёная")
-    colors = ("#E99A37", "#438BD0", "#42966D")
-    counts_by_area = [[int(result[key]) for result in replay_results] for key in keys]
-
-    for number, result, counts in zip(replay_numbers, replay_results, zip(*counts_by_area)):
-        if any(key not in result for key in keys):
-            raise ValueError("В replay_results отсутствуют счётчики метода 2")
-        if sum(counts) != N:
-            raise ValueError(
-                f"Сумма точек метода 2 для replay {number} не равна N: "
-                f"{sum(counts)} != {N}"
-            )
-
-    import numpy as np
-    x = np.arange(len(replay_results))
-    width = 0.24
-    figure, ax = plt.subplots(figsize=(max(11, len(replay_results) * 1.1), 7))
-
-    for counts, label, color, offset in zip(
-        counts_by_area, labels, colors, (-width, 0, width)
+def plot_replays(experiment, scenario, method):
+    result = scenario.methods[method - 1]
+    counts = result.counts
+    caption = _caption(experiment, scenario.alpha)
+    figure, ax = _axes(f'Метод {method} · повторения\n{caption}',
+                       'Номер повторения', 'Доля')
+    positions = np.arange(1, len(counts) + 1)
+    for offset, color, name, group, fractions in zip(
+        (-0.24, 0, 0.24), COLORS, AREA_NAMES, counts.T, result.fractions.T
     ):
-        ratios = [count / N for count in counts]
-        bars = ax.bar(x + offset, ratios, width=width, label=label, color=color)
-        for bar, count, ratio in zip(bars, counts, ratios):
-            ax.text(
-                bar.get_x() + bar.get_width() / 2,
-                ratio / 2 if ratio > 0 else 0.012,
-                str(count), ha="center",
-                va="center" if ratio > 0 else "bottom",
-                fontsize=9, fontweight="bold",
-                color="white" if ratio >= 0.12 else "black",
-            )
-
-    ax.set_xticks(x)
-    ax.set_xticklabels([str(number) for number in replay_numbers])
+        if len(counts) > 20:
+            # Все столбцы одной области рисуем одной коллекцией.
+            centers = positions + offset
+            x = centers[:, None] + np.array([-0.12, -0.12, 0.12, 0.12])
+            y = fractions[:, None] * np.array([0, 1, 1, 0])
+            ax.add_collection(PolyCollection(np.stack((x, y), axis=-1),
+                                             facecolors=color, label=name))
+            continue
+        bars = ax.bar(positions + offset, fractions, 0.24, color=color, label=name)
+        if len(counts) <= 10:
+            ax.bar_label(bars, labels=[str(count) for count in group], fontsize=8, padding=2)
+    tick_step = max(1, (len(counts) + 19) // 20)
+    ax.set_xticks(positions[::tick_step])
+    ax.set_xlim(0.5, len(counts) + 0.5)
     ax.set_ylim(0, 1.08)
-    ax.set_xlabel("Номер replay", fontsize=13)
-    ax.set_ylabel("Доля точек n / N", fontsize=13)
-    ax.set_title(
-        f"Метод 2: распределение точек по областям для всех replay: "
-        f"k={k}, θ={theta}, N={N}", fontsize=14,
-    )
-    ax.legend(title="Область")
-    ax.grid(axis="y", alpha=0.25)
-    ax.set_axisbelow(True)
-    figure.tight_layout()
+    ax.legend()
     return figure
 
 
-def plot_method3_distribution(x, f, f_min, f_max, method3_areas, k, theta, N):
-    """Строит исходную плотность с делением диапазона x на три равные части.
-
-    Функция только создаёт и возвращает figure; на диск ничего не сохраняет.
-    """
-    import numpy as np
-
-    x_values = np.asarray(x, dtype=float)
-    density = np.asarray(f, dtype=float)
-    x1 = float(method3_areas["orange_boundary"])
-    x2 = float(method3_areas["green_boundary"])
-
-    figure, ax = plt.subplots(figsize=(11, 7))
-    ax.plot(x_values, density, linewidth=2, label=r"$f(x)$ — исходная плотность")
-    ax.plot(x_values, np.asarray(f_min, dtype=float), linewidth=1.6, label=r"$f_{\min}(x)$ — минимум")
-    ax.plot(x_values, np.asarray(f_max, dtype=float), linewidth=1.6, label=r"$f_{\max}(x)$ — максимум")
-    ax.fill_between(
-        x_values, 0, density, where=(x_values <= x1),
-        color="#E99A37", alpha=0.28, label="Область 1",
+def plot_comparison_three_methods(rows, *, k_values, theta, alpha):
+    """Объединённая ошибка по N на одном графике для всех трёх методов."""
+    k = ', '.join(f'{value:g}' for value in k_values)
+    figure, ax = _axes(
+        f'Объединённая ошибка трёх методов\nk={k}, θ={theta:g}, α={alpha:g}\n'
+        f'Границы при N_ref={rows[0].N_ref}',
+        'Размер выборки N', r'$\chi^2$',
     )
-    ax.fill_between(
-        x_values, 0, density, where=((x_values > x1) & (x_values <= x2)),
-        color="#438BD0", alpha=0.28, label="Область 2",
-    )
-    ax.fill_between(
-        x_values, 0, density, where=(x_values > x2),
-        color="#42966D", alpha=0.28, label="Область 3",
-    )
-    ax.axvline(x1, color="#B87521", linestyle="--", linewidth=1.6)
-    ax.axvline(x2, color="#286DA8", linestyle="--", linewidth=1.6)
-    ax.annotate(f"x₁ = {x1:.4f}", xy=(x1, 0), xytext=(5, 10),
-                textcoords="offset points", fontsize=10)
-    ax.annotate(f"x₂ = {x2:.4f}", xy=(x2, 0), xytext=(5, 10),
-                textcoords="offset points", fontsize=10)
-    ax.set_xlim(float(method3_areas["x_min"]), float(method3_areas["x_max"]))
-    ax.set_xlabel("x", fontsize=13)
-    ax.set_ylabel("Плотность", fontsize=13)
-    ax.text(0.5, 0.96, "Равные интервалы по x", transform=ax.transAxes, ha="center", va="top", fontsize=11, bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "none"})
-    ax.set_title(
-        f"Метод 3: равные интервалы по x: k={k}, θ={theta}, N={N}",
-        fontsize=15,
-    )
-    ax.grid(True, alpha=0.25)
-    ax.legend(fontsize=10)
-    figure.tight_layout()
+    for method, marker in enumerate(('o', 's', '^'), 1):
+        data = [row for row in rows if row.method == method]
+        ax.plot([row.N for row in data], [row.pooled_error for row in data],
+                marker=marker, label=f'Метод {method}')
+    ax.set_xticks(sorted({row.N for row in rows}))
+    ax.set_ylim(bottom=0)
+    ax.legend()
     return figure
 
 
-def plot_method3_cdf(x, method3_areas, k, theta, N):
-    """Строит CDF метода 3 и отмечает две точки (x₁, F(x₁)) и (x₂, F(x₂)).
-
-    Координаты точек используют те же границы x, что и график плотности.
-    """
-    x1 = float(method3_areas["orange_boundary"])
-    x2 = float(method3_areas["green_boundary"])
-    y1 = float(method3_areas["cdf_orange"])
-    y2 = float(method3_areas["cdf_green"])
-    cdf_values = method3_areas["cdf_values"]
-
-    figure, ax = plt.subplots(figsize=(11, 7))
-    ax.plot(x, cdf_values, linewidth=2, label=r"$F(x)$ — функция распределения")
-
-    # Ровно две точки границ областей — лежат на кривой CDF.
-    ax.scatter(
-        [x1, x2], [y1, y2], s=65, zorder=5,
-        color="#333333", label="Точки границ областей",
-    )
-    for boundary, level in ((x1, y1), (x2, y2)):
-        ax.vlines(boundary, 0, level, linestyles="--", linewidth=1.5, alpha=0.8)
-        ax.hlines(level, float(method3_areas["x_min"]), boundary,
-                  linestyles="--", linewidth=1.2, alpha=0.8)
-    ax.annotate(f"(x₁, F(x₁))\n({x1:.4f}, {y1:.4f})",
-                xy=(x1, y1), xytext=(10, 12), textcoords="offset points", fontsize=10)
-    ax.annotate(f"(x₂, F(x₂))\n({x2:.4f}, {y2:.4f})",
-                xy=(x2, y2), xytext=(10, -34), textcoords="offset points", fontsize=10)
-    ax.set_xlim(float(method3_areas["x_min"]), float(method3_areas["x_max"]))
-    ax.set_ylim(0, 1.05)
-    ax.set_xlabel("x", fontsize=13)
-    ax.set_ylabel("F(x)", fontsize=13)
-    ax.set_title(
-        f"Метод 3: CDF с границами равных интервалов x: k={k}, θ={theta}, N={N}",
-        fontsize=15,
-    )
-    ax.grid(True, alpha=0.25)
-    ax.legend(fontsize=10)
-    figure.tight_layout()
+def plot_comparison(rows, *, x_axis, fixed_value, k_values, theta):
+    figure = Figure(figsize=(13, 5), layout='constrained')
+    axes = figure.subplots(1, 3, sharey=False)
+    k = ', '.join(f'{value:g}' for value in k_values)
+    fixed_label = 'α' if x_axis == 'N' else 'N'
+    xlabel = 'Размер выборки N' if x_axis == 'N' else 'Уровень шума α'
+    figure.suptitle(f'Средняя ошибка по повторениям\n'
+                    f'k={k}, θ={theta:g}, {fixed_label}={fixed_value:g} · '
+                    f'границы при N_ref={rows[0].N_ref}')
+    for method, ax in enumerate(axes, 1):
+        data = [row for row in rows if row.method == method]
+        x = [getattr(row, x_axis) for row in data]
+        ax.plot(x, [row.expected_error for row in data], '--', color='#555555', label='E[D]')
+        means = [row.mean_error for row in data]
+        if all(row.mean_standard_error is not None for row in data):
+            ax.errorbar(x, means, yerr=[1.96 * row.mean_standard_error for row in data],
+                        fmt='o', capsize=3, label='Среднее D и 95% интервал')
+        else:
+            ax.plot(x, means, 'o', label='Среднее D')
+        ax.legend()
+        ax.set(title=f'Метод {method}', xlabel=xlabel, ylabel='D', ylim=(0, None))
+        ax.set_xticks(x)
+        ax.grid(axis='y', alpha=0.24)
     return figure
 
 
-def plot_method3_theoretical_histogram(method3_areas, k, theta, N):
-    """Строит теоретическую гистограмму вероятностей метода по равным интервалам x."""
-    values = [
-        float(method3_areas["orange_probability"]),
-        float(method3_areas["blue_probability"]),
-        float(method3_areas["green_probability"]),
-    ]
-    labels = ["Область 1", "Область 2", "Область 3"]
-    colors = ["#E99A37", "#438BD0", "#42966D"]
-
-    figure, ax = plt.subplots(figsize=(9, 7))
-    bars = ax.bar(labels, values, width=0.6, color=colors)
-    for bar, value in zip(bars, values):
-        ax.text(
-            bar.get_x() + bar.get_width() / 2, value,
-            f"{value:.4f}", ha="center", va="bottom", fontsize=11,
-        )
-    ax.set_ylim(0, 1.05)
-    ax.set_ylabel("Теоретическая вероятность", fontsize=13)
-    ax.set_xlabel("Область", fontsize=13)
-    ax.set_title(
-        f"Метод 3: теоретические вероятности по равным интервалам x: "
-        f"k={k}, θ={theta}, N={N}",
-        fontsize=14,
-    )
-    ax.grid(axis="y", alpha=0.25)
-    ax.set_axisbelow(True)
-    figure.tight_layout()
+def plot_noise_comparison(rows, *, k_values, theta):
+    """Ожидаемый коэффициент в зависимости от α для всех размеров N."""
+    figure = Figure(figsize=(13, 5), layout='constrained')
+    axes = figure.subplots(1, 3)
+    k = ', '.join(f'{value:g}' for value in k_values)
+    figure.suptitle(f'Влияние шума на ожидаемую ошибку\nk={k}, θ={theta:g} · '
+                    f'границы при N_ref={rows[0].N_ref}')
+    sizes = sorted({row.N for row in rows})
+    for method, ax in enumerate(axes, 1):
+        for N in sizes:
+            series = sorted((row for row in rows if row.method == method and row.N == N),
+                            key=lambda row: row.alpha)
+            ax.plot([row.alpha for row in series], [row.expected_error for row in series],
+                    'o-', label=f'N={N}')
+        ax.set(title=f'Метод {method}', xlabel='Уровень шума α', ylabel='E[D]', ylim=(0, None))
+        ax.set_xticks(sorted({row.alpha for row in rows}))
+        ax.grid(axis='y', alpha=0.24)
+    axes[0].legend()
     return figure
 
 
-def plot_method3_replays_histogram(replay_results, N, k, theta):
-    """Строит гистограммы областей метода 3 для каждого replay на одном рисунке."""
-    import numpy as np
-
-    if N <= 0:
-        raise ValueError("N должно быть > 0")
-    if not replay_results:
-        raise ValueError("Список replay_results пуст")
-
-    replay_numbers = [int(result["replay"]) for result in replay_results]
-    keys = ("method3_orange_count", "method3_blue_count", "method3_green_count")
-    labels = ("Оранжевая", "Синяя", "Зелёная")
-    colors = ("#E99A37", "#438BD0", "#42966D")
-    for result, number in zip(replay_results, replay_numbers):
-        if any(key not in result for key in keys):
-            raise ValueError(f"В replay {number} отсутствуют счётчики метода 4")
-        counts = [int(result[key]) for key in keys]
-        if sum(counts) != N:
-            raise ValueError(
-                f"Сумма точек метода 4 для replay {number} не равна N: "
-                f"{sum(counts)} != {N}"
-            )
-
-    counts_by_area = [[int(result[key]) for result in replay_results] for key in keys]
-    positions = np.arange(len(replay_results))
-    width = 0.24
-    figure, ax = plt.subplots(figsize=(max(11, len(replay_results) * 1.1), 7))
-
-    for counts, label, color, offset in zip(
-        counts_by_area, labels, colors, (-width, 0, width)
-    ):
-        ratios = [count / N for count in counts]
-        bars = ax.bar(positions + offset, ratios, width=width, label=label, color=color)
-        for bar, count, ratio in zip(bars, counts, ratios):
-            ax.text(
-                bar.get_x() + bar.get_width() / 2,
-                ratio / 2 if ratio > 0 else 0.012,
-                str(count), ha="center",
-                va="center" if ratio > 0 else "bottom",
-                fontsize=9, fontweight="bold",
-                color="white" if ratio >= 0.12 else "black",
-            )
-
-    ax.set_xticks(positions)
-    ax.set_xticklabels([str(number) for number in replay_numbers])
-    ax.set_ylim(0, 1.08)
-    ax.set_xlabel("Номер replay", fontsize=13)
-    ax.set_ylabel("Доля точек n / N", fontsize=13)
-    ax.set_title(
-        f"Метод 3: распределение точек по равным интервалам x для всех replay: "
-        f"k={k}, θ={theta}, N={N}", fontsize=14,
-    )
-    ax.legend(title="Область")
-    ax.grid(axis="y", alpha=0.25)
-    ax.set_axisbelow(True)
-    figure.tight_layout()
+def plot_group_comparison(groups, *, theta, x_axis, fixed_value):
+    """Сравнивает D по объединённым повторам для групп k."""
+    figure = Figure(figsize=(13, 5), layout='constrained')
+    axes = figure.subplots(1, 3)
+    fixed_label = 'N' if x_axis == 'alpha' else 'α'
+    xlabel = 'Уровень шума α' if x_axis == 'alpha' else 'Размер выборки N'
+    figure.suptitle(f'Коэффициент D по объединённой выборке\n'
+                    f'θ={theta:g}, {fixed_label}={fixed_value:g}')
+    for method, ax in enumerate(axes, 1):
+        ticks = set()
+        for group, rows in groups.items():
+            series = sorted((row for row in rows if row.method == method),
+                            key=lambda row: getattr(row, x_axis))
+            x = [getattr(row, x_axis) for row in series]
+            ticks.update(x)
+            label = ', '.join(f'{value:g}' for value in group)
+            ax.plot(x, [row.pooled_error for row in series], 'o-', label=f'k={label}')
+        ax.set(title=f'Метод {method}', xlabel=xlabel, ylabel='D', ylim=(0, None))
+        ax.set_xticks(sorted(ticks))
+        ax.grid(axis='y', alpha=0.24)
+    axes[0].legend()
     return figure

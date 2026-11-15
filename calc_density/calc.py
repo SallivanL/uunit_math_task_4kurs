@@ -1,1053 +1,478 @@
+"""Гамма-модель, границы областей и повторения эксперимента."""
+
+from dataclasses import dataclass
+from numbers import Integral, Real
+
 import numpy as np
+from scipy.integrate import quad
+from scipy.optimize import brentq
+from scipy.special import gammainc, gammaincc, logsumexp
 from scipy.stats import gamma
 
 
-def calculate_densities(k, theta, N, points=5000):
-    """
-    Рассчитывает:
-
-        f      — исходное распределение Gamma(k, theta)
-        f_min  — распределение минимума выборки размера N
-        f_max  — распределение максимума выборки размера N
-    """
-
-    if k <= 0:
-        raise ValueError("k должно быть > 0")
-
-    if theta <= 0:
-        raise ValueError("theta должно быть > 0")
-
-    if N <= 0:
-        raise ValueError("N должно быть > 0")
-
-    N = int(N)
-
-    x_max = gamma.ppf(
-        0.9999,
-        a=k,
-        scale=theta,
-    )
-
-    x = np.linspace(
-        0,
-        x_max,
-        points,
-    )
-
-    f = gamma.pdf(
-        x,
-        a=k,
-        scale=theta,
-    )
-
-    F = gamma.cdf(
-        x,
-        a=k,
-        scale=theta,
-    )
-
-    f_max = (
-        N
-        * f
-        * np.power(F, N - 1)
-    )
-
-    f_min = (
-        N
-        * f
-        * np.power(1 - F, N - 1)
-    )
-
-    return x, f, f_min, f_max
-
-
-def find_left_area(x, y, m):
-    """
-    Находит левую область, содержащую m долю площади
-    под кривой y.
-
-    Используется для f_min.
-
-    Результат:
-        [0, right]
-    """
-
-    if not 0 < m <= 1:
-        raise ValueError("m должно быть в диапазоне (0, 1]")
-
-    total_area = np.trapezoid(y, x)
-    target_area = m * total_area
-
-    right = len(x) - 1
-
-    for i in range(1, len(x)):
-        area = np.trapezoid(
-            y[:i + 1],
-            x[:i + 1],
-        )
-
-        if area >= target_area:
-            right = i
-            break
-
-    area = np.trapezoid(
-        y[:right + 1],
-        x[:right + 1],
-    )
-
-    return {
-        "left": 0,
-        "right": right,
-        "area": area,
-        "total_area": total_area,
-        "ratio": area / total_area,
-    }
-
-
-def find_right_area(x, y, m):
-    """
-    Находит правую область, содержащую m долю площади
-    под кривой y.
-
-    Используется для f_max.
-
-    Результат:
-        [left, x_max]
-    """
-
-    if not 0 < m <= 1:
-        raise ValueError("m должно быть в диапазоне (0, 1]")
-
-    total_area = np.trapezoid(y, x)
-    target_area = m * total_area
-
-    left = 0
-
-    for i in range(len(x) - 2, -1, -1):
-        area = np.trapezoid(
-            y[i:],
-            x[i:],
-        )
-
-        if area >= target_area:
-            left = i
-            break
-
-    area = np.trapezoid(
-        y[left:],
-        x[left:],
-    )
-
-    return {
-        "left": left,
-        "right": len(x) - 1,
-        "area": area,
-        "total_area": total_area,
-        "ratio": area / total_area,
-    }
-
-
-def find_middle_area(x, left_index, right_index):
-    """
-    Формирует центральную область между двумя границами.
-
-    Левая граница берётся из f_min.
-    Правая граница берётся из f_max.
-    """
-
-    if left_index >= right_index:
-        raise ValueError(
-            "Левая граница должна быть меньше правой"
-        )
-
-    return {
-        "left": left_index,
-        "right": right_index,
-        "left_boundary": x[left_index],
-        "right_boundary": x[right_index],
-    }
-
-
-def calculate_areas(
-    x,
-    f,
-    f_min,
-    f_max,
-    m,
-):
-    """
-    Формирует три НЕпересекающиеся области.
-
-    1. Оранжевая:
-       левая область f_min, содержащая m площади.
-
-    2. Синяя:
-       промежуток между правой границей оранжевой
-       и левой границей зелёной.
-
-    3. Зелёная:
-       правая область f_max, содержащая m площади.
-
-    Всё пространство x разбивается на:
-
-        ОРАНЖЕВАЯ | СИНЯЯ | ЗЕЛЁНАЯ
-    """
-
-    orange = find_left_area(
-        x=x,
-        y=f_min,
-        m=m,
-    )
-
-    green = find_right_area(
-        x=x,
-        y=f_max,
-        m=m,
-    )
-
-    blue = find_middle_area(
-        x=x,
-        left_index=orange["right"],
-        right_index=green["left"],
-    )
-
-    return {
-        "orange": orange,
-        "blue": blue,
-        "green": green,
-    }
-
-
-def calculate_cdf_area_probabilities(
-    k,
-    theta,
-    x,
-    areas,
-):
-    """
-    Рассчитывает теоретические вероятности трёх областей
-    через функцию распределения F(x) исходного Gamma(k, theta).
-
-    x1 = правая граница оранжевой области.
-    x2 = левая граница зелёной области.
-
-    Тогда:
-
-        P1 = F(x1)
-        P2 = F(x2) - F(x1)
-        P3 = 1 - F(x2)
-
-    Эти значения являются теоретическими долями элементов
-    в трёх областях.
-    """
-
-    if k <= 0:
-        raise ValueError("k должно быть > 0")
-
-    if theta <= 0:
-        raise ValueError("theta должно быть > 0")
-
-    if len(x) == 0:
-        raise ValueError("x не должен быть пустым")
-
-    orange_boundary = x[
-        areas["orange"]["right"]
-    ]
-
-    green_boundary = x[
-        areas["green"]["left"]
-    ]
-
-    if orange_boundary >= green_boundary:
-        raise ValueError(
-            "Граница оранжевой области должна быть меньше "
-            "границы зелёной области"
-        )
-
-    cdf_orange = gamma.cdf(
-        orange_boundary,
-        a=k,
-        scale=theta,
-    )
-
-    cdf_green = gamma.cdf(
-        green_boundary,
-        a=k,
-        scale=theta,
-    )
-
-    orange_probability = cdf_orange
-
-    blue_probability = (
-        cdf_green
-        - cdf_orange
-    )
-
-    green_probability = (
-        1.0
-        - cdf_green
-    )
-
-    probability_sum = (
-        orange_probability
-        + blue_probability
-        + green_probability
-    )
-
-    if not np.isclose(
-        probability_sum,
-        1.0,
-        atol=1e-12,
+@dataclass(frozen=True)
+class Partition:
+    boundaries: tuple[float, float]
+    probabilities: np.ndarray
+    cdf_levels: tuple[float, float]
+    clean_expected_error: float
+    x_max: float | None = None
+
+
+@dataclass(frozen=True)
+class AreaResult:
+    p: float
+    p_hat: float
+    observed: int
+    expected: float
+    difference: float
+    relative_deviation_percent: float
+    pooled_contribution: float
+
+
+@dataclass(frozen=True)
+class MethodResult:
+    counts: np.ndarray  # строки — повторения, столбцы — области слева направо
+    fractions: np.ndarray
+    areas: tuple[AreaResult, ...]
+    errors: np.ndarray
+    mean_error: float
+    std_error: float
+    pooled_error: float
+    mean_standard_error: float | None
+    expected_error: float
+    bias_squared: float
+    variance_coefficient: float
+
+
+@dataclass(frozen=True)
+class NoiseResult:
+    alpha: float
+    samples: np.ndarray
+    methods: tuple[MethodResult, ...]
+
+
+@dataclass(frozen=True)
+class Curves:
+    x: np.ndarray
+    density: np.ndarray
+    minimum_density: np.ndarray
+    maximum_density: np.ndarray
+    cdf: np.ndarray
+
+
+@dataclass(frozen=True)
+class Experiment:
+    k_values: tuple[float, ...]
+    theta: float
+    N: int
+    N_ref: int
+    quotas: tuple[int, ...]
+    koef: float
+    seed: int
+    partitions: tuple[Partition, ...]
+    clean_samples: np.ndarray
+    component_indices: np.ndarray
+    noise_results: tuple[NoiseResult, ...]
+    curves: Curves | None
+
+
+@dataclass(frozen=True)
+class SummaryRow:
+    N: int
+    alpha: float
+    method: int
+    mean_error: float
+    std_error: float
+    pooled_error: float
+    clean_expected_error: float
+    mean_standard_error: float | None
+    expected_error: float
+    bias_squared: float
+    variance_coefficient: float
+    seed: int
+    replays: int
+    N_ref: int
+
+
+def _real(value, name, minimum, *, inclusive=False):
+    if (
+        isinstance(value, (bool, np.bool_))
+        or not isinstance(value, Real)
+        or not np.isfinite(value)
+        or value < minimum
+        or (value == minimum and not inclusive)
     ):
-        raise RuntimeError(
-            "Теоретические вероятности через F(x) "
-            "не дают сумму 1."
+        operator = '≥' if inclusive else '>'
+        raise ValueError(f'{name} должно быть конечным числом {operator} {minimum}')
+    return float(value)
+
+
+def _integer(value, name, minimum):
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, Integral) or value < minimum:
+        raise ValueError(f'{name} должно быть целым числом ≥ {minimum}')
+    return int(value)
+
+
+def _unique(values, name):
+    values = tuple(values)
+    if not values or len(set(values)) != len(values):
+        raise ValueError(f'{name} должен быть непустым списком без повторений')
+    return values
+
+
+def normalize_experiment_groups(massive_k, k_values):
+    """Плоский massive_k задаёт одну смесь, вложенный — несколько групп."""
+    if massive_k is None:
+        groups = [(k,) for k in k_values]
+    elif not isinstance(massive_k, (list, tuple)) or not massive_k:
+        raise ValueError('massive_k должен быть непустым списком или None')
+    elif any(isinstance(item, (list, tuple)) for item in massive_k):
+        if not all(isinstance(group, (list, tuple)) for group in massive_k):
+            raise ValueError('massive_k должен быть плоским списком либо списком групп')
+        groups = massive_k
+    else:
+        groups = [massive_k]
+    return _unique(
+        (_unique((_real(k, 'k', 0) for k in group), 'Группа k') for group in groups),
+        'Группы экспериментов',
+    )
+
+
+def calculate_mixed_sample_counts(k_values, N):
+    """Распределяет N элементов поровну, остаток отдаёт первым компонентам."""
+    if not k_values:
+        raise ValueError('Нужна хотя бы одна компонента k')
+    N = _integer(N, 'N', len(k_values))
+    base, remainder = divmod(N, len(k_values))
+    return [base + (index < remainder) for index in range(len(k_values))]
+
+
+class GammaModel:
+    """Независимые наблюдения с фиксированным числом элементов каждой компоненты."""
+
+    def __init__(self, k_values, theta, N, *, quotas=None):
+        self.k_values = _unique((_real(k, 'k', 0) for k in k_values), 'Группа k')
+        self.theta = _real(theta, 'θ', 0)
+        self.N = _integer(N, 'N', len(self.k_values))
+        if quotas is None:
+            quotas = calculate_mixed_sample_counts(self.k_values, self.N)
+        self.quotas = tuple(_integer(count, 'Квота', 1) for count in quotas)
+        if len(self.quotas) != len(self.k_values) or sum(self.quotas) != self.N:
+            raise ValueError('Квоты должны соответствовать компонентам и в сумме давать N')
+        self._counts = np.asarray(self.quotas)[:, None]
+        self._weights = self._counts / self.N
+        self._gamma = gamma(a=np.asarray(self.k_values)[:, None], scale=self.theta)
+
+    def cdf(self, x):
+        return np.sum(self._weights * self._gamma.cdf(x), axis=0)
+
+    def _extreme_log_products(self, x):
+        """Логарифмы F_max и S_min. В верхнем хвосте используем sf."""
+        cdf = self._gamma.cdf(x)
+        sf = self._gamma.sf(x)
+        with np.errstate(divide='ignore'):
+            log_cdf = np.where(cdf < 0.5, np.log(cdf), np.log1p(-np.minimum(sf, 0.5)))
+            log_sf = np.where(cdf < 0.5, np.log1p(-np.minimum(cdf, 0.5)), np.log(sf))
+        return np.stack((
+            np.sum(self._counts * log_cdf, axis=0),
+            np.sum(self._counts * log_sf, axis=0),
+        ))
+
+    def extreme_tail_masses(self, a, b):
+        """P(min ≤ a) и P(max ≥ b) для чистого распределения."""
+        log_max, log_min_survival = self._extreme_log_products([a, b])
+        return float(-np.expm1(log_min_survival[0])), float(-np.expm1(log_max[1]))
+
+    def _quantile_root(self, function, upper):
+        # Решаем в единицах масштаба θ, поэтому точность не зависит от θ.
+        return self.theta * brentq(
+            lambda value: function(value * self.theta), 0.0, upper / self.theta,
+            xtol=np.finfo(float).tiny, rtol=1e-14, maxiter=1200,
         )
 
-    cdf_values = gamma.cdf(
-        x,
-        a=k,
-        scale=theta,
-    )
-
-    return {
-        "orange_boundary": float(
-            orange_boundary
-        ),
-        "green_boundary": float(
-            green_boundary
-        ),
-        "cdf_orange": float(cdf_orange),
-        "cdf_green": float(cdf_green),
-        "cdf_values": cdf_values,
-        "orange_probability": float(
-            orange_probability
-        ),
-        "blue_probability": float(
-            blue_probability
-        ),
-        "green_probability": float(
-            green_probability
-        ),
-        "total": float(probability_sum),
-    }
-
-
-
-def calculate_equal_cdf_areas(k, theta, x):
-    """Границы метода 2: деление диапазона CDF на три равные части."""
-    if k <= 0:
-        raise ValueError("k должно быть > 0")
-    if theta <= 0:
-        raise ValueError("theta должно быть > 0")
-    if len(x) == 0:
-        raise ValueError("x не должен быть пустым")
-
-    from scipy.stats import gamma
-
-    levels = (1.0 / 3.0, 2.0 / 3.0)
-    x1, x2 = gamma.ppf(levels, a=k, scale=theta)
-    cdf_values = gamma.cdf(x, a=k, scale=theta)
-    probabilities = {
-        "orange_probability": float(levels[0]),
-        "blue_probability": float(levels[1] - levels[0]),
-        "green_probability": float(1.0 - levels[1]),
-        "total": 1.0,
-    }
-    return {
-        "orange_boundary": float(x1),
-        "green_boundary": float(x2),
-        "cdf_orange": float(levels[0]),
-        "cdf_green": float(levels[1]),
-        "cdf_values": cdf_values,
-        **probabilities,
-    }
-
-
-
-def calculate_method3_equal_x_areas(k, theta, x):
-    """Метод 3: делит диапазон x графика на три равных по длине интервала.
-
-    Файлы графиков этого метода используют префикс method_3.
-    Теоретические вероятности рассчитываются через исходную CDF Gamma.
-    """
-    if k <= 0:
-        raise ValueError("k должно быть > 0")
-    if theta <= 0:
-        raise ValueError("theta должно быть > 0")
-
-    x_values = np.asarray(x, dtype=float)
-    if x_values.ndim != 1 or x_values.size < 2:
-        raise ValueError("x должен содержать как минимум две точки")
-    if not np.all(np.isfinite(x_values)):
-        raise ValueError("Все значения x должны быть конечными")
-    if np.any(np.diff(x_values) <= 0):
-        raise ValueError("Значения x должны строго возрастать")
-
-    x_min = float(x_values[0])
-    x_max = float(x_values[-1])
-    if x_max <= x_min:
-        raise ValueError("Верхняя граница x должна быть больше нижней")
-
-    interval_width = (x_max - x_min) / 3.0
-    boundary_1 = x_min + interval_width
-    boundary_2 = x_min + 2.0 * interval_width
-
-    cdf_1 = float(gamma.cdf(boundary_1, a=k, scale=theta))
-    cdf_2 = float(gamma.cdf(boundary_2, a=k, scale=theta))
-    probabilities = {
-        "orange_probability": cdf_1,
-        "blue_probability": cdf_2 - cdf_1,
-        "green_probability": 1.0 - cdf_2,
-    }
-    probability_sum = sum(probabilities.values())
-
-    if any(not np.isfinite(value) or value < 0 for value in probabilities.values()):
-        raise RuntimeError("Теоретические вероятности метода по равным интервалам x некорректны")
-    if not np.isclose(probability_sum, 1.0, atol=1e-12):
-        raise RuntimeError("Теоретические вероятности метода по равным интервалам x не дают сумму 1")
-
-    return {
-        "x_min": x_min,
-        "x_max": x_max,
-        "orange_boundary": float(boundary_1),
-        "green_boundary": float(boundary_2),
-        "cdf_orange": cdf_1,
-        "cdf_green": cdf_2,
-        "cdf_values": gamma.cdf(x_values, a=k, scale=theta),
-        **probabilities,
-        "total": float(probability_sum),
-    }
-
-
-def calculate_method3_replay_totals(replay_results):
-    """Суммирует фактические количества областей метода с префиксом method3."""
-    if not replay_results:
-        raise ValueError("replay_results не должен быть пустым")
-
-    keys = ("method3_orange_count", "method3_blue_count", "method3_green_count")
-    if any(any(key not in result for key in keys) for result in replay_results):
-        raise ValueError("В replay_results отсутствуют счётчики метода 4")
-
-    counts = [sum(int(result[key]) for result in replay_results) for key in keys]
-    total = sum(int(result["total"]) for result in replay_results)
-    if total <= 0:
-        raise ValueError("Общее количество элементов должно быть больше нуля")
-    if sum(counts) != total:
-        raise RuntimeError("Сумма областей метода 4 не равна общему количеству элементов")
-
-    return {
-        "orange_count": counts[0],
-        "blue_count": counts[1],
-        "green_count": counts[2],
-        "orange_ratio": counts[0] / total,
-        "blue_ratio": counts[1] / total,
-        "green_ratio": counts[2] / total,
-        "total": total,
-    }
-
-def calculate_method2_replay_totals(replay_results):
-    """Суммарные фактические количества точек для метода 2."""
-    if not replay_results:
-        raise ValueError("replay_results не должен быть пустым")
-    keys = ("method2_orange_count", "method2_blue_count", "method2_green_count")
-    counts = [sum(int(r[key]) for r in replay_results) for key in keys]
-    total = sum(int(r["total"]) for r in replay_results)
-    if sum(counts) != total:
-        raise RuntimeError("Сумма областей метода 2 не равна общему количеству элементов.")
-    return {
-        "orange_count": counts[0], "blue_count": counts[1], "green_count": counts[2],
-        "orange_ratio": counts[0] / total, "blue_ratio": counts[1] / total,
-        "green_ratio": counts[2] / total, "total": total,
-    }
-
-
-def generate_sample(k, theta, N, rng):
-    """
-    Генерирует одну выборку из N элементов Gamma(k, theta).
-    """
-
-    if k <= 0:
-        raise ValueError("k должно быть > 0")
-
-    if theta <= 0:
-        raise ValueError("theta должно быть > 0")
-
-    if N <= 0:
-        raise ValueError("N должно быть > 0")
-
-    return rng.gamma(
-        shape=k,
-        scale=theta,
-        size=int(N),
-    )
-
-
-def calculate_replay_statistics(
-    sample,
-    x,
-    areas,
-):
-    """
-    Классифицирует каждый элемент выборки
-    ровно в одну из трёх областей.
-
-    Оранжевая:
-        x <= orange_boundary
-
-    Синяя:
-        orange_boundary < x < green_boundary
-
-    Зелёная:
-        x >= green_boundary
-    """
-
-    orange_boundary = x[
-        areas["orange"]["right"]
-    ]
-
-    green_boundary = x[
-        areas["green"]["left"]
-    ]
-
-    orange_mask = (
-        sample <= orange_boundary
-    )
-
-    blue_mask = (
-        (sample > orange_boundary)
-        & (sample < green_boundary)
-    )
-
-    green_mask = (
-        sample >= green_boundary
-    )
-
-    orange_count = int(
-        np.sum(orange_mask)
-    )
-
-    blue_count = int(
-        np.sum(blue_mask)
-    )
-
-    green_count = int(
-        np.sum(green_mask)
-    )
-
-    total_count = len(sample)
-
-    covered_count = (
-        orange_count
-        + blue_count
-        + green_count
-    )
-
-    if covered_count != total_count:
-        raise RuntimeError(
-            "Не удалось классифицировать все элементы "
-            "выборки."
-        )
-
-    return {
-        "orange": {
-            "count": orange_count,
-            "ratio": orange_count / total_count,
-        },
-        "blue": {
-            "count": blue_count,
-            "ratio": blue_count / total_count,
-        },
-        "green": {
-            "count": green_count,
-            "ratio": green_count / total_count,
-        },
-        "total": total_count,
-        "boundaries": {
-            "orange": orange_boundary,
-            "green": green_boundary,
-        },
-    }
-
-
-def run_replays(
-    k,
-    theta,
-    N,
-    replays,
-    x,
-    areas,
-    rng,
-    equal_cdf_areas=None,
-    method3_areas=None,
-):
-    """
-    Выполняет replay; все методы используют одну и ту же выборку.
-    """
-
-    if replays <= 0:
-        raise ValueError("replays должно быть > 0")
-
-    results = []
-
-    for replay in range(1, replays + 1):
-        sample = generate_sample(
-            k=k,
-            theta=theta,
-            N=N,
-            rng=rng,
-        )
-
-        statistics = calculate_replay_statistics(
-            sample=sample,
-            x=x,
-            areas=areas,
-        )
-
-        method2_counts = {}
-        if equal_cdf_areas is not None:
-            b1 = equal_cdf_areas["orange_boundary"]
-            b2 = equal_cdf_areas["green_boundary"]
-            method2_counts = {
-                "method2_orange_count": int(np.sum(sample <= b1)),
-                "method2_blue_count": int(np.sum((sample > b1) & (sample < b2))),
-                "method2_green_count": int(np.sum(sample >= b2)),
-            }
-            if sum(method2_counts.values()) != len(sample):
-                raise RuntimeError("Метод 2 не классифицировал все элементы выборки.")
-
-        method3_counts = {}
-        if method3_areas is not None:
-            b1 = method3_areas["orange_boundary"]
-            b2 = method3_areas["green_boundary"]
-            method3_counts = {
-                "method3_orange_count": int(np.sum(sample <= b1)),
-                "method3_blue_count": int(np.sum((sample > b1) & (sample < b2))),
-                "method3_green_count": int(np.sum(sample >= b2)),
-            }
-            if sum(method3_counts.values()) != len(sample):
-                raise RuntimeError("Метод 4 не классифицировал все элементы выборки")
-
-        results.append({
-            "replay": replay,
-            "orange_count": statistics["orange"]["count"],
-            "blue_count": statistics["blue"]["count"],
-            "green_count": statistics["green"]["count"],
-            **method2_counts,
-            **method3_counts,
-            "total": statistics["total"],
-        })
-
-    return results
-
-
-def calculate_replay_ratios(replay_results):
-    """
-    Рассчитывает n / N для каждой области
-    отдельно для каждого replay.
-
-    Для каждого replay:
-
-        orange_ratio = n1 / N
-        blue_ratio   = n2 / N
-        green_ratio  = n3 / N
-
-    Сумма трёх долей для каждого replay должна быть равна 1.
-    """
-
-    if not replay_results:
-        raise ValueError(
-            "replay_results не должен быть пустым"
-        )
-
-    ratios = []
-
-    for result in replay_results:
-        total = result["total"]
-
-        if total <= 0:
+    def quantile(self, probability):
+        component_quantiles = self._gamma.ppf(probability)
+        if len(self.k_values) == 1:
+            return float(component_quantiles[0, 0])
+        upper = float(np.max(component_quantiles))
+        # При практически совпадающих CDF всех компонентов возможна ошибка округления.
+        if self.cdf(upper)[0] <= probability:
+            return upper
+        return self._quantile_root(lambda x: self.cdf(x)[0] - probability, upper)
+
+    def _max_plot_upper(self, max_tail):
+        component_tail = -np.expm1(np.log1p(-max_tail) / self.N)
+        return float(np.max(self._gamma.isf(component_tail)))
+
+    def _minimum_quantile(self, probability):
+        component_tail = -np.expm1(np.log1p(-probability) / self.N)
+        if len(self.k_values) == 1:
+            return float(self._gamma.ppf(component_tail)[0, 0])
+        upper = float(np.max(self._gamma.ppf(component_tail)))
+        target = np.log1p(-probability)
+        objective = lambda x: target - self._extreme_log_products(x)[1, 0]
+        if objective(upper) <= 0:
+            return upper
+        return self._quantile_root(objective, upper)
+
+    def extreme_boundaries(self, koef):
+        koef = _real(koef, 'koef', 0)
+        if koef >= 1:
+            raise ValueError('koef должно быть меньше 1')
+        a = self._minimum_quantile(koef)
+        if len(self.k_values) == 1:
+            p = -np.expm1(np.log1p(-koef) / self.N)
+            b = float(self._gamma.isf(p)[0, 0])
+        else:
+            upper = self._max_plot_upper(koef)
+            target = np.log1p(-koef)
+            objective = lambda x: self._extreme_log_products(x)[0, 0] - target
+            b = upper if objective(upper) <= 0 else self._quantile_root(objective, upper)
+        if not 0 < a < b < np.inf:
             raise ValueError(
-                "Количество элементов replay должно быть > 0"
+                f'Метод 1: границы не образуют три области при N={self.N}, koef={koef}. '
+                'Увеличьте N или уменьшите koef.'
             )
+        return a, b
 
-        orange_ratio = (
-            result["orange_count"] / total
-        )
+    def component_probabilities(self, boundaries):
+        """Вероятности областей чистого распределения по компонентам."""
+        a, b = boundaries
+        if not 0 < a < b < np.inf:
+            raise ValueError('Границы должны быть конечными и удовлетворять 0 < a < b')
+        cdf = self._gamma.cdf([a, b])
+        sf = self._gamma.sf([a, b])
+        # Разность функций выживания точнее, когда обе CDF близки к единице.
+        middle = np.where(cdf[:, 0] < 0.5, cdf[:, 1] - cdf[:, 0], sf[:, 0] - sf[:, 1])
+        return np.column_stack((cdf[:, 0], middle, sf[:, 1]))
 
-        blue_ratio = (
-            result["blue_count"] / total
-        )
-
-        green_ratio = (
-            result["green_count"] / total
-        )
-
-        ratio_sum = (
-            orange_ratio
-            + blue_ratio
-            + green_ratio
-        )
-
-        if not np.isclose(
-            ratio_sum,
-            1.0,
-            atol=1e-12,
+    def partition(self, boundaries, *, x_max=None):
+        """Вероятности и E[D] при α=0 с учётом фиксированных квот."""
+        by_component = self.component_probabilities(boundaries)
+        probabilities = np.sum(self._weights * by_component, axis=0)
+        if np.any(probabilities <= 0) or not np.isclose(
+            probabilities.sum(), 1.0, rtol=0, atol=1e-12
         ):
-            raise RuntimeError(
-                "Сумма долей областей для replay "
-                "не равна 1."
-            )
+            raise ValueError('Вероятности областей должны быть положительными и давать сумму 1')
+        _, variance = self.error_terms(probabilities, by_component)
+        expected_error = variance / self.N
+        levels = tuple(float(value) for value in self.cdf(boundaries))
+        return Partition(boundaries, probabilities, levels, expected_error, x_max)
 
-        ratios.append({
-            "replay": result["replay"],
-            "orange_ratio": float(orange_ratio),
-            "blue_ratio": float(blue_ratio),
-            "green_ratio": float(green_ratio),
-        })
+    def noisy_component_probabilities(self, boundaries, alpha):
+        """Интегрирует Gamma CDF по стандартному нормальному шуму.
 
-    return ratios
+        При положительных a и b обрезка в нуле оставляет все значения ≤ 0
+        в левой области, поэтому вероятности областей можно считать по X + αZ.
+        """
+        if alpha == 0:
+            return self.component_probabilities(boundaries)
+        return np.array([
+            _integrate_noisy_areas(k, self.theta, boundaries, alpha) for k in self.k_values
+        ])
 
+    def error_terms(self, p, by_component):
+        """Смещение A и коэффициент дисперсии B для E[D] = A + B/N."""
+        q = np.sum(self._weights * by_component, axis=0)
+        bias_squared = float(relative_error(q, p))
+        # Складываем две другие области, чтобы сохранить малый хвост при q_ij ≈ 1.
+        complement = by_component[:, [1, 0, 0]] + by_component[:, [2, 2, 1]]
+        scaled_variance = (by_component / p) * (complement / p)
+        return bias_squared, float(np.sum(self._weights * scaled_variance))
 
-def calculate_average_replay_ratios(replay_ratios):
-    """
-    Рассчитывает среднюю долю элементов
-    в каждой области по всем replay.
-
-    Результат:
-
-        mean(n1 / N)
-        mean(n2 / N)
-        mean(n3 / N)
-    """
-
-    if not replay_ratios:
-        raise ValueError(
-            "replay_ratios не должен быть пустым"
+    def partitions(self, koef):
+        # Сначала вычисляем интервалы. Сетка для рисунков добавляется позже.
+        x_max = self.quantile(0.9999)
+        return (
+            self.partition(self.extreme_boundaries(koef)),
+            self.partition((self.quantile(1 / 3), self.quantile(2 / 3))),
+            self.partition((x_max / 3, 2 * x_max / 3), x_max=x_max),
         )
 
-    orange_ratio = np.mean([
-        replay["orange_ratio"]
-        for replay in replay_ratios
-    ])
+    def curves(self, partitions, points=5000):
+        points = _integer(points, 'Число точек графика', 30)
+        method3_max = partitions[2].x_max
+        upper = max(self._max_plot_upper(0.0001), method3_max, partitions[0].boundaries[1])
+        minimum_focus = self._minimum_quantile(0.995)
+        # Не включаем x=0 в сетку плотности: при k < 1 там возможна особенность.
+        low = np.geomspace(minimum_focus * 1e-6, minimum_focus, points // 3)
+        rest = np.linspace(minimum_focus, upper, points - len(low) + 1)[1:]
+        landmarks = [boundary for part in partitions for boundary in part.boundaries]
+        x = np.unique(np.r_[low, rest, landmarks, method3_max])
+        log_pdf = self._gamma.logpdf(x)
+        cdf = self._gamma.cdf(x)
+        sf = self._gamma.sf(x)
+        density = np.exp(logsumexp(log_pdf + np.log(self._weights), axis=0))
+        log_cdf = np.where(cdf < 0.5, self._gamma.logcdf(x), np.log1p(-np.minimum(sf, 0.5)))
+        log_sf = self._gamma.logsf(x)
 
-    blue_ratio = np.mean([
-        replay["blue_ratio"]
-        for replay in replay_ratios
-    ])
+        def extreme_density(log_factors):
+            # Нулевая степень даёт множитель 1 даже при log(F_i) = −∞.
+            contributions = []
+            for index, count in enumerate(self.quotas):
+                other = np.arange(len(self.quotas)) != index
+                combined = np.sum(self._counts[other] * log_factors[other], axis=0)
+                if count > 1:
+                    combined += (count - 1) * log_factors[index]
+                contributions.append(np.log(count) + log_pdf[index] + combined)
+            return np.exp(logsumexp(contributions, axis=0))
 
-    green_ratio = np.mean([
-        replay["green_ratio"]
-        for replay in replay_ratios
-    ])
+        return Curves(x, density, extreme_density(log_sf), extreme_density(log_cdf), self.cdf(x))
 
-    ratio_sum = (
-        orange_ratio
-        + blue_ratio
-        + green_ratio
+    def draw(self, replays, rng):
+        # Прямой набор n_i независимых Gamma-точек эквивалентен выбору n_i
+        # случайных индексов без возвращения из N независимых точек компоненты.
+        samples = np.concatenate([
+            rng.gamma(k, self.theta, size=(replays, count))
+            for k, count in zip(self.k_values, self.quotas)
+        ], axis=1)
+        labels = np.broadcast_to(np.repeat(np.arange(len(self.quotas)), self.quotas), samples.shape)
+        order = rng.permuted(np.broadcast_to(np.arange(self.N), samples.shape), axis=1)
+        return np.take_along_axis(samples, order, axis=1), np.take_along_axis(labels, order, axis=1)
+
+
+def _integrate_noisy_areas(k, theta, boundaries, alpha):
+    a, b = boundaries
+    normalizer = 1 / np.sqrt(2 * np.pi)
+
+    def integrand(z, area):
+        left = max(0.0, (a - alpha * z) / theta)
+        right = max(0.0, (b - alpha * z) / theta)
+        if area == 0:
+            probability = gammainc(k, left)
+        elif area == 2:
+            probability = gammaincc(k, right)
+        elif gammainc(k, left) < 0.5:
+            probability = gammainc(k, right) - gammainc(k, left)
+        else:
+            probability = gammaincc(k, left) - gammaincc(k, right)
+        return probability * normalizer * np.exp(-0.5 * z * z)
+
+    # Разбиение в точках излома CDF и в центральной части нормальной плотности.
+    breakpoints = sorted({-8.0, 0.0, 8.0} | {x / alpha for x in boundaries if x < 12 * alpha})
+    intervals = [-np.inf, *breakpoints, np.inf]
+    probabilities = [
+        sum(quad(integrand, lo, hi, args=(area,), epsabs=1e-13, epsrel=1e-10)[0]
+            for lo, hi in zip(intervals, intervals[1:]))
+        for area in range(3)
+    ]
+    if not np.isclose(sum(probabilities), 1.0, rtol=0, atol=1e-10):
+        raise ValueError('Вероятности областей с шумом должны давать сумму 1')
+    return probabilities
+
+
+def apply_noise(samples, standard_noise, alpha):
+    """Y = max(0, X + αZ). Для α=0 сохраняет чистые наблюдения."""
+    alpha = _real(alpha, 'α', 0, inclusive=True)
+    if alpha == 0:
+        return samples
+    with np.errstate(over='ignore', invalid='ignore'):
+        noisy = np.maximum(0.0, samples + alpha * standard_noise)
+    if not np.all(np.isfinite(noisy)):
+        raise ValueError('Зашумлённая выборка содержит неконечные значения')
+    return noisy
+
+
+def classify_samples(samples, boundaries):
+    """Для каждого повторения возвращает счётчики [x≤a, a<x<b, x≥b]."""
+    a, b = boundaries
+    if not a < b or not np.all(np.isfinite(samples)):
+        raise ValueError('Для классификации нужны упорядоченные границы и конечные наблюдения')
+    left = np.count_nonzero(samples <= a, axis=1)
+    right = np.count_nonzero(samples >= b, axis=1)
+    return np.column_stack((left, samples.shape[1] - left - right, right))
+
+
+def relative_error(observed_fractions, probabilities):
+    """D = Σ ((p − p̂) / p)²."""
+    return np.sum(((probabilities - observed_fractions) / probabilities) ** 2, axis=-1)
+
+
+def evaluate_method(samples, partition, error_terms):
+    counts = classify_samples(samples, partition.boundaries)
+    fractions = counts / samples.shape[1]
+    errors = relative_error(fractions, partition.probabilities)
+    areas = []
+    for p, observed in zip(partition.probabilities, counts.sum(axis=0)):
+        p_hat = observed / samples.size
+        expected = p * samples.size
+        relative = (p_hat - p) / p
+        areas.append(AreaResult(float(p), float(p_hat), int(observed), float(expected),
+                                float(observed - expected), float(100 * relative),
+                                float(relative**2)))
+    pooled = sum(area.pooled_contribution for area in areas)
+    std = float(errors.std())
+    standard_error = std / np.sqrt(len(errors) - 1) if len(errors) > 1 else None
+    bias_squared, variance_coefficient = error_terms
+    return MethodResult(
+        counts, fractions, tuple(areas), errors, float(errors.mean()), std, pooled,
+        standard_error, bias_squared + variance_coefficient / samples.shape[1],
+        bias_squared, variance_coefficient,
     )
 
-    if not np.isclose(
-        ratio_sum,
-        1.0,
-        atol=1e-12,
-    ):
-        raise RuntimeError(
-            "Средние доли трёх областей "
-            "не дают сумму 1."
-        )
 
-    return {
-        "orange_ratio": float(orange_ratio),
-        "blue_ratio": float(blue_ratio),
-        "green_ratio": float(green_ratio),
-        "total": float(ratio_sum),
-    }
-
-
-def calculate_replay_totals(replay_results):
-    """
-    Суммирует результаты всех replay.
-    """
-
-    total = sum(
-        result["total"]
-        for result in replay_results
-    )
-
-    orange_count = sum(
-        result["orange_count"]
-        for result in replay_results
-    )
-
-    blue_count = sum(
-        result["blue_count"]
-        for result in replay_results
-    )
-
-    green_count = sum(
-        result["green_count"]
-        for result in replay_results
-    )
-
-    covered_count = (
-        orange_count
-        + blue_count
-        + green_count
-    )
-
-    if covered_count != total:
-        raise RuntimeError(
-            "Сумма трёх областей не равна общему "
-            "количеству элементов."
-        )
-
-    return {
-        "orange_count": orange_count,
-        "orange_ratio": orange_count / total,
-        "blue_count": blue_count,
-        "blue_ratio": blue_count / total,
-        "green_count": green_count,
-        "green_ratio": green_count / total,
-        "total": total,
-    }
-
-
-def calculate_area_statistics(
-    k,
-    theta,
-    N,
-    x,
-    areas,
-    replay_results,
+def run_experiments(
+    *, k_values, massive_k, theta_values, N_values, alpha_values, koef, replays, seed,
+    N_ref=20, with_curves=True,
 ):
-    """
-    Рассчитывает статистику трёх областей.
+    """Генерирует по одному результату для каждой комбинации группы k, θ и N."""
+    groups = normalize_experiment_groups(massive_k, k_values)
+    thetas = _unique((_real(value, 'θ', 0) for value in theta_values), 'Значения θ')
+    sizes = _unique((_integer(value, 'N', 1) for value in N_values), 'Значения N')
+    N_ref = _integer(N_ref, 'N_ref', 1)
+    alphas = _unique((_real(alpha, 'α', 0, inclusive=True) for alpha in alpha_values), 'Значения α')
+    replays = _integer(replays, 'Число повторений', 1)
+    seed = _integer(seed, 'Seed', 0) if seed is not None else int(np.random.SeedSequence().entropy)
+    rng = np.random.default_rng(seed)
 
-    Границы определяются только по f_min и f_max.
+    quotas_by_group = {}
+    for group in groups:
+        reference_quotas = calculate_mixed_sample_counts(group, N_ref)
+        quotas_by_group[group] = {}
+        for N in sizes:
+            counts = [count * N for count in reference_quotas]
+            if any(count % N_ref for count in counts):
+                raise ValueError(f'N={N} не сохраняет точные пропорции квот {reference_quotas} '
+                                 f'группы k={group} при N_ref={N_ref}.')
+            quotas_by_group[group][N] = [count // N_ref for count in counts]
 
-    Оранжевая:
-        X <= orange_boundary
+    for group in groups:
+        for theta in thetas:
+            reference = GammaModel(group, theta, N_ref)
+            reference_parts = reference.partitions(koef)
+            curves = reference.curves(reference_parts) if with_curves else None
+            terms = {
+                alpha: tuple(reference.error_terms(
+                    part.probabilities, reference.noisy_component_probabilities(part.boundaries, alpha),
+                ) for part in reference_parts)
+                for alpha in alphas
+            }
+            for N in sizes:
+                model = GammaModel(group, theta, N, quotas=quotas_by_group[group][N])
+                partitions = tuple(
+                    Partition(part.boundaries, part.probabilities, part.cdf_levels,
+                              part.clean_expected_error * N_ref / N, part.x_max)
+                    for part in reference_parts
+                )
+                clean, components = model.draw(replays, rng)
+                standard_noise = rng.standard_normal(clean.shape)
+                results = []
+                for alpha in alphas:
+                    samples = apply_noise(clean, standard_noise, alpha)
+                    methods = tuple(evaluate_method(samples, part, method_terms)
+                                    for part, method_terms in zip(partitions, terms[alpha]))
+                    results.append(NoiseResult(alpha, samples, methods))
+                yield Experiment(group, theta, N, N_ref, model.quotas, float(koef), seed, partitions,
+                                 clean, components, tuple(results), curves)
 
-    Синяя:
-        orange_boundary < X < green_boundary
 
-    Зелёная:
-        X >= green_boundary
-    """
-
-    orange_boundary = x[
-        areas["orange"]["right"]
+def summarize(experiment):
+    return [
+        SummaryRow(experiment.N, scenario.alpha, index, method.mean_error, method.std_error,
+                   method.pooled_error, part.clean_expected_error, method.mean_standard_error,
+                   method.expected_error, method.bias_squared, method.variance_coefficient,
+                   experiment.seed, len(experiment.clean_samples), experiment.N_ref)
+        for scenario in experiment.noise_results
+        for index, (method, part) in enumerate(zip(scenario.methods, experiment.partitions), 1)
     ]
-
-    green_boundary = x[
-        areas["green"]["left"]
-    ]
-
-    p_orange = gamma.cdf(
-        orange_boundary,
-        a=k,
-        scale=theta,
-    )
-
-    p_green_start = gamma.cdf(
-        green_boundary,
-        a=k,
-        scale=theta,
-    )
-
-    p_blue = (
-        p_green_start
-        - p_orange
-    )
-
-    p_green = (
-        1
-        - p_green_start
-    )
-
-    theoretical_probabilities = {
-        "orange": p_orange,
-        "blue": p_blue,
-        "green": p_green,
-    }
-
-    probability_sum = (
-        p_orange
-        + p_blue
-        + p_green
-    )
-
-    if not np.isclose(
-        probability_sum,
-        1.0,
-        atol=1e-10,
-    ):
-        raise RuntimeError(
-            "Теоретические вероятности трёх областей "
-            "не дают сумму 1."
-        )
-
-    statistics = {}
-
-    for area in [
-        "orange",
-        "blue",
-        "green",
-    ]:
-        counts = np.array(
-            [
-                replay[f"{area}_count"]
-                for replay in replay_results
-            ],
-            dtype=float,
-        )
-
-        total_elements = np.sum(
-            counts
-        )
-
-        total_replay_elements = (
-            len(replay_results)
-            * int(N)
-        )
-
-        probability = (
-            theoretical_probabilities[area]
-        )
-
-        mathematical_expectation = (
-            N * probability
-        )
-
-        frequency = (
-            total_elements
-            / total_replay_elements
-        )
-
-        mean = np.mean(
-            counts
-        )
-
-        variance = np.var(
-            counts,
-            ddof=0,
-        )
-
-        standard_deviation = np.sqrt(
-            variance
-        )
-
-        statistics[area] = {
-            "mathematical_expectation": float(
-                mathematical_expectation
-            ),
-            "frequency": float(
-                frequency
-            ),
-            "mean": float(
-                mean
-            ),
-            "standard_deviation": float(
-                standard_deviation
-            ),
-            "variance": float(
-                variance
-            ),
-        }
-
-    return statistics
-
-def calculate_chi_squared_comparison(
-    theoretical_probabilities,
-    observed_counts,
-):
-    """
-    Сравнивает теоретические и экспериментальные вероятности
-    трёх областей по заданной формуле:
-
-        chi2 = sum(((p_j - p_hat_j) / p_j) ** 2)
-
-    theoretical_probabilities и observed_counts должны содержать
-    ключи orange, blue и green. Фактические вероятности
-    рассчитываются по общему количеству элементов всех replay.
-    """
-    area_names = ("orange", "blue", "green")
-
-    missing_probabilities = [
-        area for area in area_names
-        if area not in theoretical_probabilities
-    ]
-    missing_counts = [
-        area for area in area_names
-        if area not in observed_counts
-    ]
-    if missing_probabilities:
-        raise ValueError(
-            "Не заданы теоретические вероятности областей: "
-            + ", ".join(missing_probabilities)
-        )
-    if missing_counts:
-        raise ValueError(
-            "Не заданы фактические количества областей: "
-            + ", ".join(missing_counts)
-        )
-
-    probabilities = {
-        area: float(theoretical_probabilities[area])
-        for area in area_names
-    }
-    counts = {
-        area: int(observed_counts[area])
-        for area in area_names
-    }
-
-    if any(not np.isfinite(p) or p <= 0 for p in probabilities.values()):
-        raise ValueError(
-            "Для расчёта chi² все теоретические вероятности "
-            "должны быть конечными и строго больше нуля."
-        )
-    if any(count < 0 for count in counts.values()):
-        raise ValueError("Фактические количества не могут быть отрицательными.")
-
-    probability_sum = sum(probabilities.values())
-    if not np.isclose(probability_sum, 1.0, atol=1e-10):
-        raise ValueError(
-            "Сумма теоретических вероятностей трёх областей "
-            f"должна быть равна 1, получено {probability_sum:.12g}."
-        )
-
-    total_count = sum(counts.values())
-    if total_count <= 0:
-        raise ValueError(
-            "Общее фактическое количество элементов должно быть больше нуля."
-        )
-
-    areas = {}
-    chi_squared = 0.0
-    for area in area_names:
-        p = probabilities[area]
-        p_hat = counts[area] / total_count
-        contribution = ((p - p_hat) / p) ** 2
-        areas[area] = {
-            "theoretical_probability": p,
-            "empirical_probability": float(p_hat),
-            "observed_count": counts[area],
-            "total_count": total_count,
-            "contribution": float(contribution),
-        }
-        chi_squared += contribution
-
-    empirical_sum = sum(
-        result["empirical_probability"] for result in areas.values()
-    )
-    if not np.isclose(empirical_sum, 1.0, atol=1e-12):
-        raise RuntimeError(
-            "Сумма экспериментальных вероятностей трёх областей не равна 1."
-        )
-
-    return {
-        "areas": areas,
-        "chi_squared": float(chi_squared),
-        "total_count": total_count,
-    }
-

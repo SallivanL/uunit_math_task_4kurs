@@ -1,357 +1,103 @@
-import numpy as np
+"""Расчёт → построение рисунков → сохранение результатов."""
 
-from calc import (
-    calculate_densities,
-    calculate_areas,
-    calculate_cdf_area_probabilities,
-    calculate_equal_cdf_areas,
-    calculate_method3_equal_x_areas,
-    calculate_method2_replay_totals,
-    calculate_method3_replay_totals,
-    calculate_chi_squared_comparison,
-    run_replays,
-    calculate_replay_totals,
-    calculate_area_statistics,
-    calculate_replay_ratios,
-    calculate_average_replay_ratios,
-)
+from collections import defaultdict
+from itertools import groupby
 
+from calc import run_experiments, summarize
 from plotting import (
-    plot_three_densities,
     plot_cdf,
+    plot_comparison,
+    plot_comparison_three_methods,
+    plot_densities,
+    plot_group_comparison,
+    plot_noise_comparison,
+    plot_probabilities,
     plot_replay_histogram,
-    plot_replays_histogram,
-    plot_method2_replays_histogram,
-    plot_cdf_histogram,
-    plot_equal_cdf,
-    plot_equal_cdf_histogram,
-    plot_method3_distribution,
-    plot_method3_cdf,
-    plot_method3_theoretical_histogram,
-    plot_method3_replays_histogram,
+    plot_replays,
 )
+from report import Report
 
-from report import clear_results, save_experiment
 
-
-def main():
-    m = 0.8
-    replays = 10
-
-    k_values = [
-        1,
-        8,
-    ]
-
-    theta_values = [1]
-    N_values = [20, 100, 500, 1000]
-
-    random_seed = None
-
-    clear_results()
-
-    rng = np.random.default_rng(random_seed)
-
-    for k in k_values:
-        for theta in theta_values:
-            for N in N_values:
-                # --------------------------------------------------
-                # Расчёт плотностей
-                # --------------------------------------------------
-
-                x, f, f_min, f_max = calculate_densities(
-                    k=k,
-                    theta=theta,
-                    N=N,
+def main(
+    *, k_values=(1, 8), massive_k=((1,), (8,), (1, 8, 15)), theta_values=(1,),
+    N_values=(20, 100, 400), N_ref=20, alpha_values=(0, 0.2, 0.5, 1, 2),
+    koef=0.7, replays=100, seed=20261115, results_root=None,
+):
+    """massive_k=[1, 8, 15] задаёт смесь, [[1, 8], [2, 4]] — две независимые смеси."""
+    experiments = run_experiments(
+        k_values=k_values, massive_k=massive_k, theta_values=theta_values, N_values=N_values,
+        alpha_values=alpha_values, koef=koef, replays=replays, seed=seed, N_ref=N_ref,
+    )
+    report = None
+    summaries = defaultdict(dict)
+    for (group, theta), cases in groupby(experiments, key=lambda case: (case.k_values, case.theta)):
+        if report is None:
+            report = Report() if results_root is None else Report(results_root)
+        rows = []
+        for case in cases:
+            alphas = [scenario.alpha for scenario in case.noise_results]
+            theory_figures = {
+                'initial_graphs': plot_densities(case, 1),
+                'method_3_distribution': plot_densities(case, 3),
+            }
+            for method in range(1, 4):
+                theory_figures[f'method_{method}_cdf'] = plot_cdf(case, method)
+                theory_figures[f'method_{method}_theoretical_probabilities'] = (
+                    plot_probabilities(case, method)
                 )
-
-                # --------------------------------------------------
-                # Расчёт трёх областей
-                # --------------------------------------------------
-
-                areas = calculate_areas(
-                    x=x,
-                    f=f,
-                    f_min=f_min,
-                    f_max=f_max,
-                    m=m,
-                )
-
-                # --------------------------------------------------
-                # Основной график распределений
-                # --------------------------------------------------
-
-                figure = plot_three_densities(
-                    x=x,
-                    f=f,
-                    f_min=f_min,
-                    f_max=f_max,
-                    areas=areas,
-                    k=k,
-                    theta=theta,
-                    N=N,
-                )
-
-                # --------------------------------------------------
-                # Расчёт вероятностей через F(x)
-                # --------------------------------------------------
-
-                cdf_area_probabilities = (
-                    calculate_cdf_area_probabilities(
-                        k=k,
-                        theta=theta,
-                        x=x,
-                        areas=areas,
+            for scenario in case.noise_results:
+                figures = {'initial_histogram': plot_replay_histogram(case, scenario)}
+                for method in range(1, 4):
+                    figures[f'method_{method}_replay_histograms'] = (
+                        plot_replays(case, scenario, method)
                     )
+                    if len(alphas) > 1:
+                        figures[f'method_{method}_observed_probabilities'] = (
+                            plot_probabilities(case, method, scenario)
+                        )
+                report.save_scenario(case, scenario, theory_figures | figures)
+            rows.extend(summarize(case))
+
+        rows.sort(key=lambda row: (row.N, row.alpha, row.method))
+        for alpha in sorted(alphas):
+            selected = [row for row in rows if row.alpha == alpha]
+            figure = plot_comparison_three_methods(selected, k_values=group, theta=theta, alpha=alpha)
+            report.save_method_comparison(group, theta, alpha=alpha, rows=selected, figure=figure)
+        report.save_summary(group, theta, rows)
+        summaries[theta][group] = rows
+        axes = [('N', 'alpha')]
+        if len(alphas) > 1:
+            noise_figure = plot_noise_comparison(rows, k_values=group, theta=theta)
+            report.save_noise_comparison(group, theta, noise_figure)
+            axes.append(('alpha', 'N'))
+        for x_axis, fixed_axis in axes:
+            for fixed_value in sorted({getattr(row, fixed_axis) for row in rows}):
+                selected = [row for row in rows if getattr(row, fixed_axis) == fixed_value]
+                figure = plot_comparison(
+                    selected, x_axis=x_axis, fixed_value=fixed_value, k_values=group, theta=theta,
                 )
-
-                # --------------------------------------------------
-                # График F(x) с точками пересечения
-                # --------------------------------------------------
-
-                cdf_figure = plot_cdf(
-                    x=x,
-                    cdf_area_probabilities=cdf_area_probabilities,
-                    areas=areas,
-                    k=k,
-                    theta=theta,
-                    N=N,
-                )
-
-                # --------------------------------------------------
-                # Гистограмма по F(x)
-                # --------------------------------------------------
-
-                cdf_histogram = plot_cdf_histogram(
-                    cdf_area_probabilities=(
-                        cdf_area_probabilities
-                    ),
-                    k=k,
-                    theta=theta,
-                    N=N,
-                )
-
-                # --------------------------------------------------
-                # Метод 2: равное деление диапазона F(x) на три части
-                # --------------------------------------------------
-
-                equal_cdf_areas = calculate_equal_cdf_areas(
-                    k=k, theta=theta, x=x,
-                )
-                equal_cdf_figure = plot_equal_cdf(
-                    x=x, equal_cdf_areas=equal_cdf_areas,
-                    k=k, theta=theta, N=N,
-                )
-                equal_cdf_histogram = plot_equal_cdf_histogram(
-                    equal_cdf_areas=equal_cdf_areas,
-                    k=k, theta=theta, N=N,
-                )
-
-                # --------------------------------------------------
-                # Метод 3: деление диапазона x на три равных интервала.
-                # Для изображений используется префикс method_3.
-                # --------------------------------------------------
-
-                method3_areas = calculate_method3_equal_x_areas(
-                    k=k, theta=theta, x=x,
-                )
-                method3_distribution_figure = plot_method3_distribution(
-                    x=x, f=f, f_min=f_min, f_max=f_max, method3_areas=method3_areas,
-                    k=k, theta=theta, N=N,
-                )
-                method3_cdf_figure = plot_method3_cdf(
-                    x=x, method3_areas=method3_areas,
-                    k=k, theta=theta, N=N,
-                )
-                method3_theoretical_histogram = plot_method3_theoretical_histogram(
-                    method3_areas=method3_areas,
-                    k=k, theta=theta, N=N,
-                )
-
-                # --------------------------------------------------
-                # Проведение replay: все методы используют одни выборки
-                # --------------------------------------------------
-
-                replay_results = run_replays(
-                    k=k,
-                    theta=theta,
-                    N=N,
-                    replays=replays,
-                    x=x,
-                    areas=areas,
-                    rng=rng,
-                    equal_cdf_areas=equal_cdf_areas,
-                    method3_areas=method3_areas,
-                )
-
-                # --------------------------------------------------
-                # Итоговые результаты replay
-                # --------------------------------------------------
-
-                replay_totals = calculate_replay_totals(
-                    replay_results
-                )
-                method2_replay_totals = calculate_method2_replay_totals(
-                    replay_results
-                )
-                method3_replay_totals = calculate_method3_replay_totals(
-                    replay_results
-                )
-
-                # --------------------------------------------------
-                # Сравнение теоретических и экспериментальных
-                # вероятностей по формуле chi² для трёх методов
-                # --------------------------------------------------
-
-                method1_chi_squared = calculate_chi_squared_comparison(
-                    theoretical_probabilities={
-                        "orange": cdf_area_probabilities["orange_probability"],
-                        "blue": cdf_area_probabilities["blue_probability"],
-                        "green": cdf_area_probabilities["green_probability"],
-                    },
-                    observed_counts={
-                        "orange": replay_totals["orange_count"],
-                        "blue": replay_totals["blue_count"],
-                        "green": replay_totals["green_count"],
-                    },
-                )
-
-                method2_chi_squared = calculate_chi_squared_comparison(
-                    theoretical_probabilities={
-                        "orange": equal_cdf_areas["orange_probability"],
-                        "blue": equal_cdf_areas["blue_probability"],
-                        "green": equal_cdf_areas["green_probability"],
-                    },
-                    observed_counts={
-                        "orange": method2_replay_totals["orange_count"],
-                        "blue": method2_replay_totals["blue_count"],
-                        "green": method2_replay_totals["green_count"],
-                    },
-                )
-
-                method3_chi_squared = calculate_chi_squared_comparison(
-                    theoretical_probabilities={
-                        "orange": method3_areas["orange_probability"],
-                        "blue": method3_areas["blue_probability"],
-                        "green": method3_areas["green_probability"],
-                    },
-                    observed_counts={
-                        "orange": method3_replay_totals["orange_count"],
-                        "blue": method3_replay_totals["blue_count"],
-                        "green": method3_replay_totals["green_count"],
-                    },
-                )
-
-                # --------------------------------------------------
-                # Статистика областей
-                # --------------------------------------------------
-
-                area_statistics = calculate_area_statistics(
-                    k=k,
-                    theta=theta,
-                    N=N,
-                    x=x,
-                    areas=areas,
-                    replay_results=replay_results,
-                )
-
-                # --------------------------------------------------
-                # Доли n / N для каждого replay
-                # --------------------------------------------------
-
-                replay_ratios = calculate_replay_ratios(
-                    replay_results=replay_results,
-                )
-
-                # --------------------------------------------------
-                # Средние доли n / N по всем replay
-                # --------------------------------------------------
-
-                average_replay_ratios = (
-                    calculate_average_replay_ratios(
-                        replay_ratios=replay_ratios,
-                    )
-                )
-
-                # --------------------------------------------------
-                # Итоговая гистограмма replay
-                # --------------------------------------------------
-
-                histogram = plot_replay_histogram(
-                    average_replay_ratios=average_replay_ratios,
-                    k=k,
-                    theta=theta,
-                    N=N,
-                    replays=replays,
-                )
-
-                # --------------------------------------------------
-                # Один рисунок со всеми replay-гистограммами
-                # --------------------------------------------------
-
-                replay_histogram = plot_replays_histogram(
-                    replay_results=replay_results,
-                    N=N,
-                    k=k,
-                    theta=theta,
-                )
-
-                # Единый рисунок со всеми replay-гистограммами метода 2
-                method2_replay_histogram = plot_method2_replays_histogram(
-                    replay_results=replay_results,
-                    N=N,
-                    k=k,
-                    theta=theta,
-                )
-
-                method3_replay_histogram = plot_method3_replays_histogram(
-                    replay_results=replay_results,
-                    N=N,
-                    k=k,
-                    theta=theta,
-                )
-
-                # --------------------------------------------------
-                # Передача рассчитанных результатов и графиков в report.py
-                # --------------------------------------------------
-
-                save_experiment(
-                    k=k,
-                    theta=theta,
-                    N=N,
-                    m=m,
-                    replays=replays,
-                    x=x,
-                    areas=areas,
+                report.save_comparison(
+                    group, theta, x_axis=x_axis, fixed_value=fixed_value, rows=selected,
                     figure=figure,
-                    cdf_figure=cdf_figure,
-                    histogram=histogram,
-                    replay_histogram=replay_histogram,
-                    method2_replay_histogram=method2_replay_histogram,
-                    cdf_histogram=cdf_histogram,
-                    equal_cdf_figure=equal_cdf_figure,
-                    equal_cdf_histogram=equal_cdf_histogram,
-                    equal_cdf_areas=equal_cdf_areas,
-                    method2_replay_totals=method2_replay_totals,
-                    method1_chi_squared=method1_chi_squared,
-                    method2_chi_squared=method2_chi_squared,
-                    replay_results=replay_results,
-                    replay_ratios=replay_ratios,
-                    average_replay_ratios=average_replay_ratios,
-                    replay_totals=replay_totals,
-                    area_statistics=area_statistics,
-                    cdf_area_probabilities=(
-                        cdf_area_probabilities
-                    ),
-                    method3_distribution_figure=method3_distribution_figure,
-                    method3_cdf_figure=method3_cdf_figure,
-                    method3_theoretical_histogram=method3_theoretical_histogram,
-                    method3_replay_histogram=method3_replay_histogram,
-                    method3_areas=method3_areas,
-                    method3_replay_totals=method3_replay_totals,
-                    method3_chi_squared=method3_chi_squared,
                 )
+    for theta, groups in summaries.items():
+        report.save_all_groups(theta, groups)
+        save_group_comparisons(report, theta, groups)
+    return report.run_dir
 
 
-if __name__ == "__main__":
+def save_group_comparisons(report, theta, groups):
+    for x_axis, fixed_axis in (('alpha', 'N'), ('N', 'alpha')):
+        values = sorted({getattr(row, fixed_axis) for rows in groups.values() for row in rows})
+        for value in values:
+            selected = {
+                group: [row for row in rows if getattr(row, fixed_axis) == value]
+                for group, rows in groups.items()
+            }
+            figure = plot_group_comparison(selected, theta=theta, x_axis=x_axis, fixed_value=value)
+            report.save_group_comparison(theta, fixed_axis=fixed_axis, fixed_value=value,
+                                         groups=selected, figure=figure)
+
+
+if __name__ == '__main__':
     main()
