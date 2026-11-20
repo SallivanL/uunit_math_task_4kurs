@@ -19,7 +19,7 @@ from report import Report
 
 
 def main(
-    *, k_values=(1, 8), massive_k=((1,), (8,), (1, 8, 15)), theta_values=(1,),
+    *, k_values=(1, 8), massive_k=((1, 6)), theta_values=(1,),
     N_values=(20, 100, 400), N_ref=20, alpha_values=(0, 0.2, 0.5, 1, 2),
     koef=0.7, replays=100, seed=20261115, results_root=None,
 ):

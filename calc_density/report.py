@@ -12,6 +12,7 @@ RESULTS_DIR = Path(__file__).resolve().parent / 'results'
 AREA_KEYS = ('orange', 'blue', 'green')
 AREA_LABELS = ('Оранжевая', 'Синяя', 'Зелёная')
 METHOD_LABELS = ('Метод 1', 'Метод 2', 'Метод 3')
+COEFFICIENT_COLUMNS = ('method_1_D', 'method_2_D', 'method_3_D')
 SUMMARY_COLUMNS = (
     'N', 'alpha', 'method', 'mean_error', 'std_error', 'pooled_error', 'clean_expected_error',
     'mean_standard_error', 'expected_error', 'bias_squared', 'variance_coefficient',
@@ -91,7 +92,7 @@ class Report:
         directory = self.group_dir(k_values)
         directory.mkdir(parents=True, exist_ok=True)
         _write_csv(directory / f'comparison_theta_{_number(theta)}.csv',
-                   SUMMARY_COLUMNS, map(astuple, rows))
+                   ('alpha', 'N', *COEFFICIENT_COLUMNS), _coefficient_rows(rows))
 
     def save_noise_comparison(self, k_values, theta, figure):
         directory = self.group_dir(k_values)
@@ -118,7 +119,7 @@ class Report:
         stem = f'comparison_all_groups_theta_{_number(theta)}_{fixed_axis}_{_number(fixed_value)}'
         figure.savefig(self.run_dir / f'{stem}.png', dpi=150)
         _write_csv(self.run_dir / f'{stem}.csv',
-                   ('k_group', 'N', 'alpha', 'method_1_D', 'method_2_D', 'method_3_D'),
+                   ('k_group', 'N', 'alpha', *COEFFICIENT_COLUMNS),
                    _group_coefficient_rows(groups))
 
     def save_validation(self, control_columns, control_rows, notes):
@@ -160,13 +161,18 @@ class Report:
         ))
 
 
+def _coefficient_rows(rows):
+    by_case = {}
+    for row in rows:
+        by_case.setdefault((row.alpha, row.N), {})[row.method] = row.pooled_error
+    for (alpha, N), coefficients in sorted(by_case.items()):
+        yield alpha, N, *(coefficients[method] for method in (1, 2, 3))
+
+
 def _group_coefficient_rows(groups):
     for group, rows in groups.items():
-        by_case = {}
-        for row in rows:
-            by_case.setdefault((row.N, row.alpha), {})[row.method] = row.pooled_error
-        for (N, alpha), coefficients in sorted(by_case.items()):
-            yield _group_name(group), N, alpha, *(coefficients[method] for method in (1, 2, 3))
+        for alpha, N, *coefficients in _coefficient_rows(rows):
+            yield _group_name(group), N, alpha, *coefficients
 
 
 def _comparison_by_size(rows):
